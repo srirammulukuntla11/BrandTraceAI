@@ -16,6 +16,7 @@ export interface SubmitDraftParams {
     name: string;
     role: string;
   };
+  userApiKey?: string;
 }
 
 export interface SubmitRevisionParams {
@@ -26,10 +27,11 @@ export interface SubmitRevisionParams {
     name: string;
     role: string;
   };
+  userApiKey?: string;
 }
 
 export async function submitContentDraft(params: SubmitDraftParams): Promise<IContentItem> {
-  const { contentType, text, user } = params;
+  const { contentType, text, user, userApiKey } = params;
   const title = (params.title || '').trim() || `Draft - ${new Date().toLocaleDateString()}`;
 
   // 1. Fetch active guidelines
@@ -38,8 +40,8 @@ export async function submitContentDraft(params: SubmitDraftParams): Promise<ICo
   // 2. Run deterministic checks first
   const ruleFindings = runDeterministicChecks(text, guidelines, contentType);
 
-  // 3. Run Gemini analysis (non-blocking if unavailable)
-  const geminiResult = await runGeminiAnalysis(text, guidelines, contentType);
+  // 3. Run Gemini analysis with user's key only (non-blocking if unavailable)
+  const geminiResult = await runGeminiAnalysis(text, guidelines, contentType, userApiKey);
 
   // 4. Merge findings: Rule Violations first, then AI findings
   const allFindings: Finding[] = [...ruleFindings, ...geminiResult.findings];
@@ -88,7 +90,7 @@ export async function submitContentDraft(params: SubmitDraftParams): Promise<ICo
 }
 
 export async function submitRevision(params: SubmitRevisionParams): Promise<IContentItem | null> {
-  const { contentId, text, user } = params;
+  const { contentId, text, user, userApiKey } = params;
 
   let existingItem: IContentItem | null = null;
   if (isUsingMemoryStore()) {
@@ -108,8 +110,8 @@ export async function submitRevision(params: SubmitRevisionParams): Promise<ICon
   // Run deterministic checks
   const ruleFindings = runDeterministicChecks(text, guidelines, existingItem.contentType);
 
-  // Run Gemini analysis
-  const geminiResult = await runGeminiAnalysis(text, guidelines, existingItem.contentType);
+  // Run Gemini analysis with user's key only
+  const geminiResult = await runGeminiAnalysis(text, guidelines, existingItem.contentType, userApiKey);
 
   const allFindings: Finding[] = [...ruleFindings, ...geminiResult.findings];
   const nextVersionNumber = (existingItem.currentVersion || existingItem.versions.length) + 1;

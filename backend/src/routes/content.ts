@@ -12,6 +12,7 @@ import {
 import { getAllGuidelines } from '../services/guidelineService.js';
 import { runDeterministicChecks } from '../services/deterministicChecker.js';
 import { runGeminiAnalysis } from '../services/geminiService.js';
+import { getUserKey } from '../services/userApiKeyService.js';
 import { authenticate, AuthenticatedRequest, requireRole } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validate.js';
 
@@ -64,8 +65,11 @@ router.post('/check', authenticate, validateBody(DraftSubmissionSchema), async (
     const { text, contentType } = req.body;
     const guidelines = await getAllGuidelines('active');
 
+    // Retrieve the requesting user's own API key (never a platform fallback)
+    const userApiKey = req.user ? getUserKey(req.user.id) : undefined;
+
     const ruleFindings = runDeterministicChecks(text, guidelines, contentType);
-    const geminiResult = await runGeminiAnalysis(text, guidelines, contentType);
+    const geminiResult = await runGeminiAnalysis(text, guidelines, contentType, userApiKey);
 
     res.json({
       success: true,
@@ -85,6 +89,8 @@ router.post('/check', authenticate, validateBody(DraftSubmissionSchema), async (
 router.post('/', authenticate, validateBody(DraftSubmissionSchema), async (req: AuthenticatedRequest, res: Response, next) => {
   try {
     const user = req.user || { id: 'anonymous', name: 'Anonymous', role: 'creator' };
+    const userApiKey = req.user ? getUserKey(req.user.id) : undefined;
+
     const item = await submitContentDraft({
       title: req.body.title,
       contentType: req.body.contentType,
@@ -94,6 +100,7 @@ router.post('/', authenticate, validateBody(DraftSubmissionSchema), async (req: 
         name: user.name,
         role: user.role,
       },
+      userApiKey,
     });
 
     res.status(201).json({
@@ -128,6 +135,8 @@ router.post(
   async (req: AuthenticatedRequest, res: Response, next) => {
     try {
       const user = req.user || { id: 'anonymous', name: 'Anonymous', role: 'creator' };
+      const userApiKey = req.user ? getUserKey(req.user.id) : undefined;
+
       const updated = await submitRevision({
         contentId: req.params.id,
         text: req.body.text,
@@ -136,6 +145,7 @@ router.post(
           name: user.name,
           role: user.role,
         },
+        userApiKey,
       });
 
       if (!updated) {

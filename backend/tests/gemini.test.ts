@@ -30,7 +30,7 @@ describe('AI Failure & Graceful Degradation Tests', () => {
 
     // Must return informative message without crashing or faking findings
     expect(geminiResult.available).toBe(false);
-    expect(geminiResult.message).toContain('Gemini AI is not configured');
+    expect(geminiResult.message).toContain('No personal Gemini API key configured');
     expect(geminiResult.findings).toEqual([]);
 
     // Combined workflow keeps rule violations 100% intact

@@ -1,4 +1,4 @@
-import { Finding, HealthStatus, IContentItem, IGuideline, IUser, UserRole } from '../types';
+import { AiConfigStatus, Finding, HealthStatus, IContentItem, IGuideline, IUser, UserRole } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -136,4 +136,24 @@ export const api = {
         body: JSON.stringify({ versionNumber, status }),
       }
     ),
+
+  // User-scoped AI Configuration
+  getAiConfig: () => request<AiConfigStatus>('/api/ai-config'),
+
+  saveAiKey: (apiKey: string) =>
+    request<{ success: boolean; configured: boolean; message: string }>('/api/ai-config', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey }),
+    }),
+
+  testAiKey: (apiKey?: string) =>
+    request<{ success: boolean; model: string; message: string }>('/api/ai-config/test', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey }),
+    }),
+
+  deleteAiKey: () =>
+    request<{ success: boolean; configured: boolean; message: string }>('/api/ai-config', {
+      method: 'DELETE',
+    }),
 };

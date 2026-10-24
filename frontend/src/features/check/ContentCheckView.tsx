@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, getStoredRole } from '../../lib/api';
 import { Finding, IContentItem, UserRole } from '../../types';
 import { FindingCard } from '../findings/FindingCard';
+import { AiConfigModal } from '../../components/AiConfigModal';
 import {
   Sparkles,
   Send,
@@ -12,6 +13,7 @@ import {
   Clock,
   ExternalLink,
   RotateCcw,
+  Key,
 } from 'lucide-react';
 
 const SAMPLE_DRAFT_WITH_VIOLATIONS = `Introducing the bot! Our team is proud to launch this cheap tool today.
@@ -32,6 +34,7 @@ export const ContentCheckView: React.FC = () => {
   const [submittedItem, setSubmittedItem] = useState<IContentItem | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [aiStatus, setAiStatus] = useState<{ available: boolean; message?: string; model?: string } | null>(null);
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
 
   // Filters for findings
   const [activeFilter, setActiveFilter] = useState<'all' | 'rule' | 'concern' | 'verification'>('all');
@@ -317,14 +320,22 @@ export const ContentCheckView: React.FC = () => {
 
                 {/* AI Status Notification */}
                 {aiStatus && !aiStatus.available && (
-                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2 mb-3">
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2.5 mb-3">
                     <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
-                    <div>
-                      <strong className="font-semibold">AI Analysis Notice: </strong>
+                    <div className="flex-1">
+                      <strong className="font-semibold text-amber-200">Personal Gemini Key Required: </strong>
                       {aiStatus.message}
                       <p className="text-slate-400 mt-1">
                         Deterministic rule checking is active and all explicit violations below are 100% verified.
                       </p>
+                      <button
+                        type="button"
+                        onClick={() => setIsAiModalOpen(true)}
+                        className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-200 border border-amber-500/40 hover:bg-amber-500/30 transition-colors"
+                      >
+                        <Key className="w-3.5 h-3.5" />
+                        Configure Your Gemini API Key
+                      </button>
                     </div>
                   </div>
                 )}
@@ -411,6 +422,12 @@ export const ContentCheckView: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* AI Key Configuration Modal */}
+      <AiConfigModal
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+      />
     </div>
   );
 };

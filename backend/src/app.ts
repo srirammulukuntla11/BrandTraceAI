@@ -5,6 +5,7 @@ import healthRouter from './routes/health.js';
 import authRouter from './routes/auth.js';
 import guidelinesRouter from './routes/guidelines.js';
 import contentRouter from './routes/content.js';
+import aiConfigRouter from './routes/aiConfig.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 export const app = express();
@@ -42,6 +43,7 @@ app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/guidelines', guidelinesRouter);
 app.use('/api/content', contentRouter);
+app.use('/api/ai-config', aiConfigRouter);
 
 // 404 handler for undefined routes
 app.use((req, res) => {

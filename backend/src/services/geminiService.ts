@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { config } from '../config/env.js';
 import { Finding, IGuideline } from '../types/index.js';
 import { isGuidelineApplicable } from './deterministicChecker.js';
+import { sanitizeApiKeyError } from './userApiKeyService.js';
 
 // Schema for validating raw model responses
 const RawGeminiFindingSchema = z.object({
@@ -32,20 +33,26 @@ export interface GeminiAnalysisResult {
  *
  * Rules:
  * - Only backend calls Gemini.
+ * - MUST ONLY use the requesting user's own configured key (userApiKey).
+ * - NO platform-owned key or GEMINI_API_KEY fallback is permitted.
  * - Draft text is treated as UNTRUSTED user data.
- * - Quoted passages MUST exist in the draft text.
+ * - Quoted passages MUST exist verbatim in the draft text.
  * - Cited guideline IDs MUST match supplied guideline IDs.
- * - If Gemini fails/is unavailable, returns clear status without faking findings.
+ * - If Gemini fails or user key is missing, returns clear status without faking findings.
  */
 export async function runGeminiAnalysis(
   draftText: string,
   guidelines: IGuideline[],
-  contentType?: string
+  contentType?: string,
+  userApiKey?: string
 ): Promise<GeminiAnalysisResult> {
-  if (!config.geminiApiKey) {
+  const activeKey = (userApiKey || '').trim();
+
+  // Strict check: User must configure their own personal key
+  if (!activeKey) {
     return {
       available: false,
-      message: 'Gemini AI is not configured. Set GEMINI_API_KEY in backend environment to enable tone, messaging, and claim verification.',
+      message: 'No personal Gemini API key configured. Please configure your own Gemini API key in AI Configuration to enable tone, messaging, and claim verification.',
       findings: [],
     };
   }
@@ -112,7 +119,7 @@ Respond ONLY with valid JSON in this exact structure:
 }`;
 
   try {
-    const genAI = new GoogleGenerativeAI(config.geminiApiKey);
+    const genAI = new GoogleGenerativeAI(activeKey);
     const model = genAI.getGenerativeModel({
       model: config.geminiModel,
       generationConfig: {
@@ -201,15 +208,15 @@ Respond ONLY with valid JSON in this exact structure:
     return {
       available: true,
       model: config.geminiModel,
-      message: 'AI analysis completed successfully.',
+      message: 'AI analysis completed successfully using personal Gemini API key.',
       findings: validatedFindings,
     };
   } catch (err: any) {
-    const errorMsg = err?.message || 'Unknown error occurred while contacting Gemini API.';
+    const safeErrorMsg = sanitizeApiKeyError(err?.message || 'Unknown error occurred while contacting Gemini API.');
     return {
       available: false,
       model: config.geminiModel,
-      message: `Gemini API call failed: ${errorMsg}. Deterministic rule findings are preserved.`,
+      message: `Gemini API call failed: ${safeErrorMsg}. Deterministic rule findings are preserved.`,
       findings: [],
     };
   }

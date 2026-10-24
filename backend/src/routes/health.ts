@@ -19,7 +19,7 @@ router.get('/', (_req: Request, res: Response) => {
       message: dbStatus.status,
     },
     ai: {
-      configured: Boolean(config.geminiApiKey),
+      mode: 'user_provided_keys_only',
       model: config.geminiModel,
     },
     environment: config.nodeEnv,

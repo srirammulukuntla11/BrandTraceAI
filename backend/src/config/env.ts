@@ -1,17 +1,12 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Search potential .env locations (current cwd, backend dir, or project root)
+// Search potential .env locations (current cwd or backend dir)
 const potentialEnvPaths = [
   path.resolve(process.cwd(), '.env'),
   path.resolve(process.cwd(), 'backend', '.env'),
-  path.resolve(__dirname, '../../.env'),
-  path.resolve(__dirname, '../../../.env'),
+  path.resolve(process.cwd(), '..', '.env'),
 ];
 
 for (const envPath of potentialEnvPaths) {
@@ -26,7 +21,7 @@ export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   mongodbUri: process.env.MONGODB_URI || '',
   frontendOrigin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
-  geminiApiKey: process.env.GEMINI_API_KEY || '',
+  // NOTE: Platform-wide Gemini API key has been removed per security requirements. Only user-provided keys are accepted.
   geminiModel: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
   jwtSecret: process.env.JWT_SECRET || 'brandtrace-dev-secret-key-2025-secure',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',

@@ -109,8 +109,16 @@ export interface HealthStatus {
     message: string;
   };
   ai: {
-    configured: boolean;
+    mode?: string;
+    configured?: boolean;
     model: string;
   };
   environment: string;
+}
+
+export interface AiConfigStatus {
+  success: boolean;
+  configured: boolean;
+  model: string;
+  message: string;
 }
