@@ -120,5 +120,10 @@ export interface AiConfigStatus {
   success: boolean;
   configured: boolean;
   model: string;
+  selectedModel?: string;
+  activeModel?: string;
+  availableModels?: string[];
+  modelsError?: string;
   message: string;
+  retryDelay?: string;
 }

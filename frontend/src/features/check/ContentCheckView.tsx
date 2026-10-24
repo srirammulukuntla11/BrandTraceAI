@@ -108,7 +108,6 @@ export const ContentCheckView: React.FC = () => {
 
   const handleApplySuggestion = (oldText: string, newText: string) => {
     if (oldText && newText) {
-      // Direct replacement in current editor
       const updated = text.replace(oldText, newText);
       setText(updated);
     }
@@ -130,33 +129,33 @@ export const ContentCheckView: React.FC = () => {
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
             New Content Compliance Check
           </h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Submit copy to run instant deterministic rule validation and explainable AI tone/claims analysis.
+          <p className="text-slate-500 text-sm mt-1">
+            Submit draft copy to run instant deterministic rule validation and explainable AI tone/claims analysis.
           </p>
         </div>
 
-        {/* 1-Click Judge Quickstart Button */}
+        {/* Quick Sample Button */}
         <button
           type="button"
           onClick={handleLoadSample}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/20 transition-all hover:scale-[1.02] shrink-0"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 shadow-xs transition-all hover:scale-[1.02] shrink-0"
         >
-          <Wand2 className="w-4 h-4 text-cyan-200" />
-          Load Judge Sample Draft (With Violations)
+          <Wand2 className="w-4 h-4 text-indigo-600" />
+          Load Sample Draft (With Violations)
         </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Left Column: Draft Input Form */}
         <div className="lg:col-span-6 flex flex-col gap-6">
-          <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+          <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
             {/* Title & Content Type */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                   Draft Title (Optional)
                 </label>
                 <input
@@ -164,18 +163,18 @@ export const ContentCheckView: React.FC = () => {
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g. Q1 Product Launch Social Copy"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-hidden focus:border-indigo-600 focus:bg-white transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                   Content Type
                 </label>
                 <select
                   value={contentType}
                   onChange={(e) => setContentType(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-hidden focus:border-indigo-600 focus:bg-white transition-colors"
                 >
                   <option value="social_post">Social Media Post</option>
                   <option value="ad_copy">Advertising Copy</option>
@@ -190,10 +189,10 @@ export const ContentCheckView: React.FC = () => {
             {/* Content Textarea */}
             <div className="mb-4">
               <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
                   Written Content Draft
                 </label>
-                <span className={`text-xs ${text.length > 48000 ? 'text-amber-400 font-semibold' : 'text-slate-400'}`}>
+                <span className={`text-xs ${text.length > 48000 ? 'text-amber-600 font-semibold' : 'text-slate-400'}`}>
                   {text.length.toLocaleString()} / 50,000 characters
                 </span>
               </div>
@@ -206,14 +205,14 @@ export const ContentCheckView: React.FC = () => {
                   if (error) setError(null);
                 }}
                 placeholder="Paste or write your marketing copy, social draft, or announcement here..."
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-sm text-white placeholder-slate-500 font-mono leading-relaxed focus:outline-none focus:border-blue-500 transition-colors resize-y"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-4 text-sm text-slate-900 placeholder-slate-400 font-mono leading-relaxed focus:outline-hidden focus:border-indigo-600 focus:bg-white transition-colors resize-y"
               />
             </div>
 
             {/* Error banner */}
             {error && (
-              <div className="mb-4 flex items-start gap-2.5 p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+              <div className="mb-4 flex items-start gap-2.5 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
                 <span>{error}</span>
               </div>
             )}
@@ -223,7 +222,7 @@ export const ContentCheckView: React.FC = () => {
               <button
                 type="button"
                 onClick={handleClear}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-500 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 Clear
@@ -232,11 +231,11 @@ export const ContentCheckView: React.FC = () => {
               <button
                 type="submit"
                 disabled={isSubmitting || !text.trim()}
-                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
                 {isSubmitting ? (
                   <>
-                    <Clock className="w-4 h-4 animate-spin text-blue-200" />
+                    <Clock className="w-4 h-4 animate-spin text-indigo-200" />
                     Checking Compliance...
                   </>
                 ) : (
@@ -249,16 +248,16 @@ export const ContentCheckView: React.FC = () => {
             </div>
           </form>
 
-          {/* Quick Explainer for Judges */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 text-xs text-slate-400 leading-relaxed">
-            <h5 className="font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-              <FileCheck2 className="w-4 h-4 text-cyan-400" />
-              How BrandTrace AI Operates:
+          {/* Compliance Architecture Notice */}
+          <div className="bg-white border border-slate-200 rounded-xl p-5 text-xs text-slate-600 leading-relaxed shadow-xs">
+            <h5 className="font-semibold text-slate-800 mb-2 flex items-center gap-1.5">
+              <FileCheck2 className="w-4 h-4 text-indigo-600" />
+              How Brand Compliance Verification Works:
             </h5>
-            <ul className="list-disc pl-4 space-y-1">
-              <li><strong className="text-rose-300">Deterministic Rules:</strong> Prohibited terms and missing required disclaimers run strictly via reproducible code.</li>
-              <li><strong className="text-amber-300">Gemini AI Analysis:</strong> Evaluates subtle tone, messaging inconsistencies, and claims requiring verification.</li>
-              <li><strong className="text-blue-300">Human Decision:</strong> Suggestions are never applied automatically; only authorized reviewers make final approval decisions.</li>
+            <ul className="list-disc pl-4 space-y-1.5 text-slate-600">
+              <li><strong className="text-rose-700">Deterministic Rules:</strong> Prohibited terms and missing required disclaimers run strictly via reproducible code.</li>
+              <li><strong className="text-violet-700">Gemini AI Analysis:</strong> Evaluates subtle tone, messaging inconsistencies, and claims requiring verification.</li>
+              <li><strong className="text-slate-800">Human Decision:</strong> Suggestions are never applied automatically; only authorized reviewers make final approval decisions.</li>
             </ul>
           </div>
         </div>
@@ -266,18 +265,18 @@ export const ContentCheckView: React.FC = () => {
         {/* Right Column: Findings & Results Panel */}
         <div className="lg:col-span-6 flex flex-col gap-6">
           {!submittedItem && !isSubmitting && (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[460px]">
-              <div className="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-4 text-blue-400">
+            <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[460px] shadow-xs">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-4 text-indigo-600">
                 <FileCheck2 className="w-8 h-8" />
               </div>
-              <h3 className="text-lg font-bold text-white mb-2">No Compliance Check Performed Yet</h3>
-              <p className="text-sm text-slate-400 max-w-sm mb-6">
-                Paste draft copy on the left or click "Load Judge Sample Draft" to test deterministic and AI compliance checking.
+              <h3 className="text-lg font-bold text-slate-900 mb-2">No Compliance Check Performed Yet</h3>
+              <p className="text-sm text-slate-500 max-w-sm mb-6">
+                Paste draft copy on the left or click "Load Sample Draft" to test deterministic and AI compliance checking.
               </p>
               <button
                 type="button"
                 onClick={handleLoadSample}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors"
               >
                 Click to Load Sample Draft with Violations
               </button>
@@ -285,12 +284,12 @@ export const ContentCheckView: React.FC = () => {
           )}
 
           {isSubmitting && (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[460px]">
-              <div className="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-4 text-blue-400 animate-pulse">
+            <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[460px] shadow-xs">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-4 text-indigo-600 animate-pulse">
                 <Sparkles className="w-8 h-8 animate-spin" />
               </div>
-              <h3 className="text-lg font-bold text-white mb-2">Analyzing Brand Compliance...</h3>
-              <p className="text-sm text-slate-400 max-w-sm">
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Analyzing Brand Compliance...</h3>
+              <p className="text-sm text-slate-500 max-w-sm">
                 Running deterministic terminology checks, inspecting disclaimers, and validating brand voice.
               </p>
             </div>
@@ -299,19 +298,19 @@ export const ContentCheckView: React.FC = () => {
           {submittedItem && !isSubmitting && (
             <div className="flex flex-col gap-4">
               {/* Submission Header & History Link */}
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                   <div>
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-blue-400">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-700">
                       Version {submittedItem.currentVersion} Created
                     </span>
-                    <h3 className="text-lg font-bold text-white">{submittedItem.title}</h3>
+                    <h3 className="text-lg font-bold text-slate-900">{submittedItem.title}</h3>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => navigate(`/history/${submittedItem.id || submittedItem._id}`)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600/20 text-blue-300 border border-blue-500/30 hover:bg-blue-600/30 transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
                   >
                     View Version History & Decisions
                     <ExternalLink className="w-3.5 h-3.5" />
@@ -320,20 +319,20 @@ export const ContentCheckView: React.FC = () => {
 
                 {/* AI Status Notification */}
                 {aiStatus && !aiStatus.available && (
-                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2.5 mb-3">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                  <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5 mb-3">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
                     <div className="flex-1">
-                      <strong className="font-semibold text-amber-200">Personal Gemini Key Required: </strong>
-                      {aiStatus.message}
-                      <p className="text-slate-400 mt-1">
+                      <strong className="font-semibold text-amber-900">Personal Gemini Key Required: </strong>
+                      <span className="text-slate-700">{aiStatus.message}</span>
+                      <p className="text-slate-600 mt-1">
                         Deterministic rule checking is active and all explicit violations below are 100% verified.
                       </p>
                       <button
                         type="button"
                         onClick={() => setIsAiModalOpen(true)}
-                        className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-200 border border-amber-500/40 hover:bg-amber-500/30 transition-colors"
+                        className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-amber-900 border border-amber-300 hover:bg-amber-100/60 shadow-xs transition-colors"
                       >
-                        <Key className="w-3.5 h-3.5" />
+                        <Key className="w-3.5 h-3.5 text-amber-700" />
                         Configure Your Gemini API Key
                       </button>
                     </div>
@@ -341,14 +340,14 @@ export const ContentCheckView: React.FC = () => {
                 )}
 
                 {/* Finding Filter Tabs */}
-                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
                   <button
                     type="button"
                     onClick={() => setActiveFilter('all')}
-                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                       activeFilter === 'all'
-                        ? 'bg-slate-700 text-white'
-                        : 'bg-slate-800/60 text-slate-400 hover:text-white'
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     All Findings ({findings.length})
@@ -357,10 +356,10 @@ export const ContentCheckView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setActiveFilter('rule')}
-                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                       activeFilter === 'rule'
-                        ? 'bg-rose-900/60 text-rose-200 border border-rose-700/60'
-                        : 'bg-slate-800/60 text-rose-300/80 hover:text-rose-200'
+                        ? 'bg-rose-50 text-rose-700 border border-rose-200 shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:text-rose-700'
                     }`}
                   >
                     Rule Violations ({ruleCount})
@@ -369,10 +368,10 @@ export const ContentCheckView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setActiveFilter('concern')}
-                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                       activeFilter === 'concern'
-                        ? 'bg-amber-900/60 text-amber-200 border border-amber-700/60'
-                        : 'bg-slate-800/60 text-amber-300/80 hover:text-amber-200'
+                        ? 'bg-amber-50 text-amber-700 border border-amber-200 shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:text-amber-700'
                     }`}
                   >
                     Potential Concerns ({concernCount})
@@ -381,10 +380,10 @@ export const ContentCheckView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setActiveFilter('verification')}
-                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                       activeFilter === 'verification'
-                        ? 'bg-cyan-900/60 text-cyan-200 border border-cyan-700/60'
-                        : 'bg-slate-800/60 text-cyan-300/80 hover:text-cyan-200'
+                        ? 'bg-violet-50 text-violet-700 border border-violet-200 shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:text-violet-700'
                     }`}
                   >
                     Needs Verification ({verificationCount})
@@ -394,14 +393,32 @@ export const ContentCheckView: React.FC = () => {
 
               {/* Findings List */}
               {filteredFindings.length === 0 ? (
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center">
-                  <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto mb-3">
-                    <FileCheck2 className="w-6 h-6" />
+                <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center shadow-xs">
+                  <div
+                    className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 border ${
+                      findings.length === 0 && aiStatus && !aiStatus.available
+                        ? 'bg-amber-50 text-amber-600 border-amber-200'
+                        : 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                    }`}
+                  >
+                    {findings.length === 0 && aiStatus && !aiStatus.available ? (
+                      <AlertCircle className="w-6 h-6" />
+                    ) : (
+                      <FileCheck2 className="w-6 h-6" />
+                    )}
                   </div>
-                  <h4 className="text-base font-semibold text-white mb-1">No Findings in this Category</h4>
-                  <p className="text-xs text-slate-400">
+                  <h4 className="text-base font-semibold text-slate-900 mb-1">
                     {findings.length === 0
-                      ? 'The submitted draft passed all active compliance rules and checks.'
+                      ? aiStatus && !aiStatus.available
+                        ? 'Deterministic Rules Passed (AI Analysis Incomplete)'
+                        : 'No Compliance Violations Detected'
+                      : 'No Findings in this Category'}
+                  </h4>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    {findings.length === 0
+                      ? aiStatus && !aiStatus.available
+                        ? 'No deterministic rule violations were found in this draft. AI tone and claims analysis was skipped or encountered an error (see details above).'
+                        : 'The submitted draft passed all active brand compliance rules and AI tone checks.'
                       : 'Try switching the filter tabs above to view other findings.'}
                   </p>
                 </div>

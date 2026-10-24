@@ -20,15 +20,34 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     ...(options.headers as Record<string, string>),
   };
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    });
+  } catch (netErr: any) {
+    throw new Error(
+      netErr?.message ||
+        'Cannot connect to BrandTrace AI backend. Verify server is running on configured port.'
+    );
+  }
 
-  const data = await response.json().catch(() => ({}));
+  const rawText = await response.text();
+  let data: any = {};
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    if (!response.ok) {
+      throw new Error(`API error (${response.status} ${response.statusText}): Backend unreachable or returned non-JSON.`);
+    }
+  }
 
   if (!response.ok) {
-    const errorMsg = data.error || (data.details ? data.details.map((d: any) => d.message).join(', ') : 'Request failed');
+    const errorMsg =
+      data?.error ||
+      (Array.isArray(data?.details) ? data.details.map((d: any) => d?.message).filter(Boolean).join(', ') : null) ||
+      `Request failed with status ${response.status} (${response.statusText})`;
     throw new Error(errorMsg);
   }
 
@@ -140,16 +159,53 @@ export const api = {
   // User-scoped AI Configuration
   getAiConfig: () => request<AiConfigStatus>('/api/ai-config'),
 
-  saveAiKey: (apiKey: string) =>
-    request<{ success: boolean; configured: boolean; message: string }>('/api/ai-config', {
+  refreshAiModels: (apiKey?: string) =>
+    request<{
+      success: boolean;
+      models: string[];
+      count: number;
+      message: string;
+      error?: string;
+      retryDelay?: string;
+    }>('/api/ai-config/models', {
       method: 'POST',
       body: JSON.stringify({ apiKey }),
     }),
 
-  testAiKey: (apiKey?: string) =>
-    request<{ success: boolean; model: string; message: string }>('/api/ai-config/test', {
+  updateAiModel: (selectedModel: string) =>
+    request<{ success: boolean; selectedModel: string; activeModel: string; message: string }>(
+      '/api/ai-config/model',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ selectedModel }),
+      }
+    ),
+
+  saveAiKey: (apiKey: string, selectedModel?: string) =>
+    request<{
+      success: boolean;
+      configured: boolean;
+      model: string;
+      selectedModel?: string;
+      activeModel?: string;
+      availableModels?: string[];
+      message: string;
+    }>('/api/ai-config', {
       method: 'POST',
-      body: JSON.stringify({ apiKey }),
+      body: JSON.stringify({ apiKey, selectedModel }),
+    }),
+
+  testAiKey: (apiKey?: string, selectedModel?: string) =>
+    request<{
+      success: boolean;
+      model: string;
+      selectedModel?: string;
+      availableModels?: string[];
+      message: string;
+      retryDelay?: string;
+    }>('/api/ai-config/test', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey, selectedModel }),
     }),
 
   deleteAiKey: () =>

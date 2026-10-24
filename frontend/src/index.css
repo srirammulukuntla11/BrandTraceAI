@@ -4,26 +4,26 @@
 
 @layer base {
   body {
-    @apply bg-slate-950 text-slate-100 min-h-screen selection:bg-cyan-500 selection:text-white;
+    @apply bg-slate-50 text-slate-800 min-h-screen selection:bg-indigo-100 selection:text-indigo-900;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 }
 
-/* Custom subtle scrollbar */
+/* Light SaaS scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #F1F5F9;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #CBD5E1;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #94A3B8;
 }

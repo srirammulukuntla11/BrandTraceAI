@@ -121,8 +121,8 @@ export const ContentDetailView: React.FC = () => {
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-20 text-center">
-        <Clock className="w-8 h-8 text-blue-400 animate-spin mx-auto mb-3" />
-        <p className="text-sm text-slate-400">Loading submission audit data...</p>
+        <Clock className="w-8 h-8 text-indigo-600 animate-spin mx-auto mb-3" />
+        <p className="text-sm text-slate-500">Loading submission audit data...</p>
       </div>
     );
   }
@@ -130,10 +130,10 @@ export const ContentDetailView: React.FC = () => {
   if (error || !item) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-12">
-        <div className="p-4 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-sm mb-4">
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm mb-4">
           {error || 'Content item not found.'}
         </div>
-        <Link to="/history" className="text-sm text-blue-400 hover:underline flex items-center gap-1">
+        <Link to="/history" className="text-sm text-indigo-600 hover:underline flex items-center gap-1">
           <ArrowLeft className="w-4 h-4" /> Back to History
         </Link>
       </div>
@@ -146,7 +146,7 @@ export const ContentDetailView: React.FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <Link
           to="/history"
-          className="inline-flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-white transition-colors"
+          className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Submission History
@@ -155,7 +155,7 @@ export const ContentDetailView: React.FC = () => {
         <button
           type="button"
           onClick={handleOpenRevision}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20 transition-all hover:scale-[1.02]"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all hover:shadow"
         >
           <Sparkles className="w-3.5 h-3.5" />
           Submit Revision Version
@@ -163,34 +163,34 @@ export const ContentDetailView: React.FC = () => {
       </div>
 
       {/* Main Title Card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-8 shadow-xl">
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 mb-8 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
                 {item.contentType}
               </span>
               <ContentStatusBadge status={item.status} />
             </div>
-            <h1 className="text-2xl font-extrabold text-white">{item.title}</h1>
+            <h1 className="text-2xl font-extrabold text-slate-900">{item.title}</h1>
           </div>
 
-          <div className="text-right text-xs text-slate-400">
+          <div className="text-right text-xs text-slate-500">
             <div className="flex items-center gap-1 justify-end">
-              <User className="w-3.5 h-3.5 text-slate-500" />
+              <User className="w-3.5 h-3.5 text-slate-400" />
               <span>Created by: {item.createdBy?.name || 'Creator'}</span>
             </div>
             <div className="flex items-center gap-1 justify-end mt-1">
-              <Clock className="w-3.5 h-3.5 text-slate-500" />
+              <Clock className="w-3.5 h-3.5 text-slate-400" />
               <span>{new Date(item.createdAt || '').toLocaleString()}</span>
             </div>
           </div>
         </div>
 
         {/* Chronological Version Switcher Tabs */}
-        <div className="pt-4 border-t border-slate-800">
-          <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-            <Layers className="w-3.5 h-3.5 text-blue-400" />
+        <div className="pt-4 border-t border-slate-100">
+          <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            <Layers className="w-3.5 h-3.5 text-indigo-600" />
             <span>Preserved Audit Versions ({item.versions.length}):</span>
           </div>
 
@@ -204,8 +204,8 @@ export const ContentDetailView: React.FC = () => {
                   onClick={() => setSelectedVersionNum(ver.versionNumber)}
                   className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${
                     isSelected
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 scale-105'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
                   }`}
                 >
                   <span>Version {ver.versionNumber}</span>
@@ -227,27 +227,27 @@ export const ContentDetailView: React.FC = () => {
 
       {/* Revision Form Modal / Expander */}
       {showRevisionForm && (
-        <div className="bg-slate-900 border border-blue-500/40 rounded-2xl p-6 mb-8 shadow-2xl">
+        <div className="bg-white border border-indigo-200 rounded-2xl p-6 mb-8 shadow-lg">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-blue-400" />
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-600" />
               Submit Revision (Creates Version {(item.currentVersion || item.versions.length) + 1})
             </h3>
             <button
               type="button"
               onClick={() => setShowRevisionForm(false)}
-              className="text-xs text-slate-400 hover:text-white"
+              className="text-xs text-slate-400 hover:text-slate-700"
             >
               Cancel
             </button>
           </div>
 
-          <p className="text-xs text-slate-400 mb-4">
+          <p className="text-xs text-slate-500 mb-4">
             Edit your draft to resolve compliance findings. Your previous versions will remain completely preserved in the audit history.
           </p>
 
           {revisionError && (
-            <div className="p-3 mb-4 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs">
+            <div className="p-3 mb-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
               {revisionError}
             </div>
           )}
@@ -257,21 +257,21 @@ export const ContentDetailView: React.FC = () => {
               rows={8}
               value={revisionText}
               onChange={(e) => setRevisionText(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-sm text-white font-mono leading-relaxed focus:outline-none focus:border-blue-500 mb-4"
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl p-4 text-sm text-slate-900 font-mono leading-relaxed focus:outline-none focus:border-indigo-600 focus:bg-white mb-4"
             />
 
             <div className="flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setShowRevisionForm(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700"
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isSubmittingRevision || !revisionText.trim()}
-                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 shadow-xs"
               >
                 {isSubmittingRevision ? (
                   <>
@@ -295,63 +295,63 @@ export const ContentDetailView: React.FC = () => {
         {/* Left: Active Version Text & Review Decision Card */}
         <div className="lg:col-span-6 flex flex-col gap-6">
           {/* Active Version Draft Display */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-            <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-800">
-              <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-blue-400" />
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+            <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-100">
+              <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-indigo-600" />
                 Version {selectedVersionNum} Content Draft
               </span>
-              <span className="text-[11px] text-slate-400">
+              <span className="text-[11px] text-slate-500">
                 Submitted: {activeVersion ? new Date(activeVersion.createdAt).toLocaleTimeString() : ''}
               </span>
             </div>
 
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-sm text-slate-200 whitespace-pre-wrap leading-relaxed max-h-[420px] overflow-y-auto">
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 font-mono text-sm text-slate-800 whitespace-pre-wrap leading-relaxed max-h-[420px] overflow-y-auto">
               {activeVersion?.text || '(Empty)'}
             </div>
           </div>
 
           {/* Human Review Decision Panel */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-emerald-600" />
                 Human Review Signoff
               </h3>
-              <span className="text-xs text-slate-400">Version {selectedVersionNum}</span>
+              <span className="text-xs text-slate-500 font-medium">Version {selectedVersionNum}</span>
             </div>
 
             {/* Existing Decision Record if any */}
             {activeVersion?.reviewDecision ? (
-              <div className="mb-4 p-4 rounded-xl bg-slate-950 border border-slate-800">
+              <div className="mb-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-400">Status:</span>
+                    <span className="text-xs font-semibold text-slate-600">Status:</span>
                     <ContentStatusBadge status={activeVersion.reviewDecision.decision} />
                   </div>
                   <span className="text-[11px] text-slate-500">
                     {new Date(activeVersion.reviewDecision.decidedAt).toLocaleString()}
                   </span>
                 </div>
-                <div className="text-xs text-slate-300">
-                  <strong className="text-blue-400">Reviewer: </strong>
+                <div className="text-xs text-slate-700">
+                  <strong className="text-indigo-600">Reviewer: </strong>
                   {activeVersion.reviewDecision.reviewerName} ({activeVersion.reviewDecision.reviewerRole})
                 </div>
                 {activeVersion.reviewDecision.notes && (
-                  <div className="text-xs text-slate-400 mt-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                    <strong className="text-slate-300">Notes: </strong>
+                  <div className="text-xs text-slate-600 mt-2 bg-white p-2.5 rounded-lg border border-slate-200">
+                    <strong className="text-slate-800">Notes: </strong>
                     {activeVersion.reviewDecision.notes}
                   </div>
                 )}
               </div>
             ) : (
-              <div className="mb-4 text-xs text-amber-300/90 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
+              <div className="mb-4 text-xs text-amber-800 bg-amber-50 p-3 rounded-xl border border-amber-200">
                 Pending reviewer evaluation. The system never approves automatically.
               </div>
             )}
 
             {decisionFeedback && (
-              <div className="mb-4 p-3 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-300 text-xs">
+              <div className="mb-4 p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs">
                 {decisionFeedback}
               </div>
             )}
@@ -359,7 +359,7 @@ export const ContentDetailView: React.FC = () => {
             {/* Decision Input Controls */}
             {isReviewer ? (
               <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                   Reviewer Notes / Feedback
                 </label>
                 <textarea
@@ -367,7 +367,7 @@ export const ContentDetailView: React.FC = () => {
                   value={reviewNotes}
                   onChange={(e) => setReviewNotes(e.target.value)}
                   placeholder="Provide guidance or rationale for changes required..."
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-blue-500 mb-4"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-900 focus:outline-none focus:border-indigo-600 focus:bg-white mb-4"
                 />
 
                 <div className="grid grid-cols-2 gap-3">
@@ -375,9 +375,9 @@ export const ContentDetailView: React.FC = () => {
                     type="button"
                     disabled={isDeciding}
                     onClick={() => handleDecision('changes_required')}
-                    className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 transition-colors disabled:opacity-50"
+                    className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors disabled:opacity-50 shadow-xs"
                   >
-                    <XCircle className="w-4 h-4 text-rose-400" />
+                    <XCircle className="w-4 h-4 text-rose-600" />
                     Request Changes
                   </button>
 
@@ -385,7 +385,7 @@ export const ContentDetailView: React.FC = () => {
                     type="button"
                     disabled={isDeciding}
                     onClick={() => handleDecision('approved')}
-                    className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-50"
+                    className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all disabled:opacity-50"
                   >
                     <CheckCircle className="w-4 h-4" />
                     Approve Content
@@ -393,10 +393,10 @@ export const ContentDetailView: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="p-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-xs text-slate-400 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
                 <div>
-                  <strong className="text-slate-200">Creator Role Active:</strong> Backend permissions strictly enforce that only reviewers can sign off on approval or request changes. Use the role switcher in the navbar to test reviewer actions.
+                  <strong className="text-slate-800">Creator Role Active:</strong> Backend permissions strictly enforce that only reviewers can sign off on approval or request changes. Use the role switcher in the navbar to test reviewer actions.
                 </div>
               </div>
             )}
@@ -405,21 +405,21 @@ export const ContentDetailView: React.FC = () => {
 
         {/* Right: Version Findings List */}
         <div className="lg:col-span-6 flex flex-col gap-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-cyan-400" />
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-violet-600" />
                 Version {selectedVersionNum} Findings ({activeVersion?.findings?.length || 0})
               </h3>
-              <span className="text-xs text-slate-400 font-mono">
+              <span className="text-xs text-slate-500 font-mono">
                 {activeVersion?.findings?.filter((f) => f.type === 'Rule Violation').length} Violations
               </span>
             </div>
 
             {/* AI Status for this version */}
             {activeVersion?.aiStatus && !activeVersion.aiStatus.available && (
-              <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+              <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
                 <span>
                   {activeVersion.aiStatus.message || 'AI analysis was unavailable for this version. Deterministic findings preserved.'}
                 </span>
@@ -428,12 +428,12 @@ export const ContentDetailView: React.FC = () => {
           </div>
 
           {!activeVersion?.findings || activeVersion.findings.length === 0 ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-10 text-center">
-              <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto mb-3">
+            <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center shadow-xs">
+              <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-3 border border-emerald-200">
                 <CheckCircle className="w-6 h-6" />
               </div>
-              <h4 className="text-base font-semibold text-white mb-1">Clean Compliance Check</h4>
-              <p className="text-xs text-slate-400">
+              <h4 className="text-base font-semibold text-slate-900 mb-1">Clean Compliance Check</h4>
+              <p className="text-xs text-slate-500">
                 No rule violations or concerns detected in Version {selectedVersionNum}.
               </p>
             </div>

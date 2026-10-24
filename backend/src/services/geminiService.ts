@@ -3,7 +3,16 @@ import { z } from 'zod';
 import { config } from '../config/env.js';
 import { Finding, IGuideline } from '../types/index.js';
 import { isGuidelineApplicable } from './deterministicChecker.js';
-import { sanitizeApiKeyError } from './userApiKeyService.js';
+import {
+  sanitizeApiKeyError,
+  classifyGeminiError,
+  resolveActiveGeminiModel,
+  getAvailableGeminiModels,
+  getCandidateGeminiModels,
+  cleanApiKey,
+  isRateLimitOrQuotaError,
+  extractRetryDelay,
+} from './userApiKeyService.js';
 
 // Schema for validating raw model responses
 const RawGeminiFindingSchema = z.object({
@@ -44,9 +53,10 @@ export async function runGeminiAnalysis(
   draftText: string,
   guidelines: IGuideline[],
   contentType?: string,
-  userApiKey?: string
+  userApiKey?: string,
+  preferredModel: string = 'auto'
 ): Promise<GeminiAnalysisResult> {
-  const activeKey = (userApiKey || '').trim();
+  const activeKey = cleanApiKey(userApiKey || '');
 
   // Strict check: User must configure their own personal key
   if (!activeKey) {
@@ -61,7 +71,7 @@ export async function runGeminiAnalysis(
   if (!text) {
     return {
       available: true,
-      model: config.geminiModel,
+      model: preferredModel !== 'auto' ? preferredModel : config.geminiModel,
       message: 'Draft is empty.',
       findings: [],
     };
@@ -118,27 +128,78 @@ Respond ONLY with valid JSON in this exact structure:
   ]
 }`;
 
-  try {
-    const genAI = new GoogleGenerativeAI(activeKey);
-    const model = genAI.getGenerativeModel({
-      model: config.geminiModel,
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.2,
-      },
-    });
+  let targetModel = preferredModel !== 'auto' ? preferredModel : config.geminiModel;
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+  try {
+    // Dynamically discover available models supporting generateContent for this user's key
+    let availableModels: string[] | undefined;
+    try {
+      availableModels = await getAvailableGeminiModels(activeKey);
+    } catch {
+      // Non-fatal if listModels fails; fallback candidates will be evaluated
+    }
+
+    let candidates: string[] = [];
+    if (preferredModel && preferredModel !== 'auto') {
+      candidates = [preferredModel];
+    } else {
+      candidates = getCandidateGeminiModels(availableModels);
+    }
+
+    const genAI = new GoogleGenerativeAI(activeKey);
+
+    let lastError: any = null;
+    let responseText: string | null = null;
+    let successfulModel: string = candidates[0] || config.geminiModel;
+
+    for (const candidate of candidates) {
+      targetModel = candidate;
+      try {
+        const model = genAI.getGenerativeModel({
+          model: candidate,
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.2,
+          },
+        });
+
+        const result = await model.generateContent(prompt);
+        responseText = result.response.text();
+        if (responseText) {
+          successfulModel = candidate;
+          break;
+        }
+      } catch (err: any) {
+        lastError = err;
+        // CRITICAL: Do NOT automatically retry many models on quota exhaustion or rate limits (Feature B.10)
+        if (isRateLimitOrQuotaError(err)) {
+          throw err;
+        }
+
+        const safeMsg = classifyGeminiError(err);
+        // If fatal key error, stop trying other models
+        if (/Invalid Gemini API key|expired|restriction block|permission denied/i.test(safeMsg)) {
+          throw err;
+        }
+        // If 404 / unsupported model in auto mode, loop to try next candidate
+        if (preferredModel && preferredModel !== 'auto') {
+          throw err;
+        }
+        continue;
+      }
+    }
 
     if (!responseText) {
+      if (lastError) throw lastError;
       return {
         available: false,
-        model: config.geminiModel,
+        model: targetModel,
         message: 'Gemini returned an empty response.',
         findings: [],
       };
     }
+
+    targetModel = successfulModel;
 
     // Parse and validate JSON with Zod
     let parsedJson: any;
@@ -147,7 +208,7 @@ Respond ONLY with valid JSON in this exact structure:
     } catch {
       return {
         available: false,
-        model: config.geminiModel,
+        model: targetModel,
         message: 'Gemini response was not valid JSON.',
         findings: [],
       };
@@ -157,7 +218,7 @@ Respond ONLY with valid JSON in this exact structure:
     if (!validation.success) {
       return {
         available: false,
-        model: config.geminiModel,
+        model: targetModel,
         message: `Gemini response schema validation failed: ${validation.error.message}`,
         findings: [],
       };
@@ -207,15 +268,15 @@ Respond ONLY with valid JSON in this exact structure:
 
     return {
       available: true,
-      model: config.geminiModel,
-      message: 'AI analysis completed successfully using personal Gemini API key.',
+      model: targetModel,
+      message: `AI analysis completed successfully using model ${targetModel}.`,
       findings: validatedFindings,
     };
   } catch (err: any) {
-    const safeErrorMsg = sanitizeApiKeyError(err?.message || 'Unknown error occurred while contacting Gemini API.');
+    const safeErrorMsg = classifyGeminiError(err);
     return {
       available: false,
-      model: config.geminiModel,
+      model: targetModel,
       message: `Gemini API call failed: ${safeErrorMsg}. Deterministic rule findings are preserved.`,
       findings: [],
     };
