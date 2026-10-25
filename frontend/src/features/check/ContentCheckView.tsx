@@ -4,6 +4,7 @@ import { api, getStoredRole } from '../../lib/api';
 import { Finding, IContentItem, UserRole } from '../../types';
 import { FindingCard } from '../findings/FindingCard';
 import { AiConfigModal } from '../../components/AiConfigModal';
+import { applyFindingCorrection } from '../../lib/correctionApplier';
 import {
   Sparkles,
   Send,
@@ -14,6 +15,9 @@ import {
   ExternalLink,
   RotateCcw,
   Key,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 const SAMPLE_DRAFT_WITH_VIOLATIONS = `Introducing the bot! Our team is proud to launch this cheap tool today.
@@ -29,6 +33,7 @@ export const ContentCheckView: React.FC = () => {
   const [text, setText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [applyFeedback, setApplyFeedback] = useState<{ type: 'success' | 'info' | 'error'; message: string } | null>(null);
 
   // Results state
   const [submittedItem, setSubmittedItem] = useState<IContentItem | null>(null);
@@ -36,8 +41,9 @@ export const ContentCheckView: React.FC = () => {
   const [aiStatus, setAiStatus] = useState<{ available: boolean; message?: string; model?: string } | null>(null);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
 
-  // Filters for findings
+  // Filters and expansion for findings
   const [activeFilter, setActiveFilter] = useState<'all' | 'rule' | 'concern' | 'verification'>('all');
+  const [allExpanded, setAllExpanded] = useState<boolean | undefined>(undefined);
 
   const handleLoadSample = () => {
     setTitle('Product Launch Social Announcement');
@@ -50,6 +56,7 @@ export const ContentCheckView: React.FC = () => {
     setTitle('');
     setText('');
     setError(null);
+    setApplyFeedback(null);
     setSubmittedItem(null);
     setFindings([]);
     setAiStatus(null);
@@ -106,11 +113,38 @@ export const ContentCheckView: React.FC = () => {
     }
   };
 
-  const handleApplySuggestion = (oldText: string, newText: string) => {
-    if (oldText && newText) {
-      const updated = text.replace(oldText, newText);
-      setText(updated);
+  const handleApplySuggestion = (findingOrOldText: Finding | string, maybeNewText?: string) => {
+    let targetFinding: Partial<Finding>;
+    if (typeof findingOrOldText === 'string') {
+      targetFinding = {
+        quotedText: findingOrOldText,
+        suggestedCorrection: maybeNewText,
+      };
+    } else {
+      targetFinding = findingOrOldText;
     }
+
+    const result = applyFindingCorrection(text, targetFinding);
+    if (!result.success) {
+      setApplyFeedback({ type: 'error', message: result.message });
+      return;
+    }
+
+    // Immediately update draft editor text
+    setText(result.updatedText);
+    if (error) setError(null);
+
+    // If change was made and finding has an ID, mark finding as accepted
+    if (targetFinding.id) {
+      setFindings((prev) =>
+        prev.map((f) => (f.id === targetFinding.id ? { ...f, status: 'accepted' as const } : f))
+      );
+    }
+
+    setApplyFeedback({
+      type: result.changeType === 'already_applied' ? 'info' : 'success',
+      message: result.message,
+    });
   };
 
   const filteredFindings = findings.filter((f) => {
@@ -125,9 +159,9 @@ export const ContentCheckView: React.FC = () => {
   const verificationCount = findings.filter((f) => f.type === 'Needs Verification').length;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-7xl xl:max-w-[1440px] 2xl:max-w-[1560px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
       {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
             New Content Compliance Check
@@ -141,17 +175,17 @@ export const ContentCheckView: React.FC = () => {
         <button
           type="button"
           onClick={handleLoadSample}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 shadow-xs transition-all hover:scale-[1.02] shrink-0"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 shadow-xs transition-all hover:scale-[1.02] shrink-0"
         >
           <Wand2 className="w-4 h-4 text-indigo-600" />
           Load Sample Draft (With Violations)
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left Column: Draft Input Form */}
-        <div className="lg:col-span-6 flex flex-col gap-6">
-          <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+        {/* Left Column: Draft Input Form (Sticky on desktop so no empty space appears while reviewing findings) */}
+        <div className="lg:col-span-5 xl:col-span-5 flex flex-col gap-5 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
+          <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-xs">
             {/* Title & Content Type */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
               <div>
@@ -209,6 +243,38 @@ export const ContentCheckView: React.FC = () => {
               />
             </div>
 
+            {/* Apply Feedback notification banner */}
+            {applyFeedback && (
+              <div
+                className={`mb-4 flex items-center justify-between gap-2.5 p-3.5 rounded-xl border text-xs transition-all ${
+                  applyFeedback.type === 'success'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : applyFeedback.type === 'info'
+                    ? 'bg-blue-50 border-blue-200 text-blue-800'
+                    : 'bg-rose-50 border-rose-200 text-rose-800'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {applyFeedback.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  ) : applyFeedback.type === 'info' ? (
+                    <Sparkles className="w-4 h-4 shrink-0 text-blue-600" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  )}
+                  <span className="font-medium">{applyFeedback.message}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setApplyFeedback(null)}
+                  className="text-slate-400 hover:text-slate-600 text-xs px-1 font-bold"
+                  title="Dismiss notification"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
             {/* Error banner */}
             {error && (
               <div className="mb-4 flex items-start gap-2.5 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
@@ -262,8 +328,8 @@ export const ContentCheckView: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Column: Findings & Results Panel */}
-        <div className="lg:col-span-6 flex flex-col gap-6">
+        {/* Right Column: Findings & Results Panel (Full width of available 7 columns) */}
+        <div className="lg:col-span-7 xl:col-span-7 flex flex-col gap-4">
           {!submittedItem && !isSubmitting && (
             <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[460px] shadow-xs">
               <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-4 text-indigo-600">
@@ -322,10 +388,18 @@ export const ContentCheckView: React.FC = () => {
                   <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5 mb-3">
                     <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
                     <div className="flex-1">
-                      <strong className="font-semibold text-amber-900">Personal Gemini Key Required: </strong>
+                      <strong className="font-semibold text-amber-900">
+                        {/rate limit|quota|429/i.test(aiStatus.message || '')
+                          ? 'Gemini Rate Limit / Quota Exceeded (429): '
+                          : /No personal Gemini API key/i.test(aiStatus.message || '')
+                          ? 'Personal Gemini Key Required: '
+                          : /No active Gemini model/i.test(aiStatus.message || '')
+                          ? 'Model Activation Required: '
+                          : 'Contextual AI Analysis Unavailable: '}
+                      </strong>
                       <span className="text-slate-700">{aiStatus.message}</span>
-                      <p className="text-slate-600 mt-1">
-                        Deterministic rule checking is active and all explicit violations below are 100% verified.
+                      <p className="text-slate-600 mt-1 font-medium">
+                        ✓ Deterministic rule checking is 100% active and all explicit violations below are verified.
                       </p>
                       <button
                         type="button"
@@ -333,61 +407,90 @@ export const ContentCheckView: React.FC = () => {
                         className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-amber-900 border border-amber-300 hover:bg-amber-100/60 shadow-xs transition-colors"
                       >
                         <Key className="w-3.5 h-3.5 text-amber-700" />
-                        Configure Your Gemini API Key
+                        Configure & Test Gemini Models
                       </button>
                     </div>
                   </div>
                 )}
 
-                {/* Finding Filter Tabs */}
-                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setActiveFilter('all')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                      activeFilter === 'all'
-                        ? 'bg-slate-900 text-white shadow-xs'
-                        : 'bg-slate-100 text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    All Findings ({findings.length})
-                  </button>
+                {aiStatus && aiStatus.available && (
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-emerald-600" />
+                      <span>
+                        <strong className="font-semibold">AI Analysis Complete: </strong>
+                        Evaluated with active model <span className="font-mono font-bold text-emerald-800">{aiStatus.model}</span>.
+                      </span>
+                    </div>
+                    <span className="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded">
+                      Verified Active
+                    </span>
+                  </div>
+                )}
 
-                  <button
-                    type="button"
-                    onClick={() => setActiveFilter('rule')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                      activeFilter === 'rule'
-                        ? 'bg-rose-50 text-rose-700 border border-rose-200 shadow-xs'
-                        : 'bg-slate-100 text-slate-600 hover:text-rose-700'
-                    }`}
-                  >
-                    Rule Violations ({ruleCount})
-                  </button>
+                {/* Finding Filter Tabs and Expand All Toggle */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setActiveFilter('all')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                        activeFilter === 'all'
+                          ? 'bg-slate-900 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      All ({findings.length})
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setActiveFilter('concern')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                      activeFilter === 'concern'
-                        ? 'bg-amber-50 text-amber-700 border border-amber-200 shadow-xs'
-                        : 'bg-slate-100 text-slate-600 hover:text-amber-700'
-                    }`}
-                  >
-                    Potential Concerns ({concernCount})
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveFilter('rule')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                        activeFilter === 'rule'
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200 shadow-xs'
+                          : 'bg-slate-100 text-slate-600 hover:text-rose-700'
+                      }`}
+                    >
+                      Violations ({ruleCount})
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setActiveFilter('verification')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                      activeFilter === 'verification'
-                        ? 'bg-violet-50 text-violet-700 border border-violet-200 shadow-xs'
-                        : 'bg-slate-100 text-slate-600 hover:text-violet-700'
-                    }`}
-                  >
-                    Needs Verification ({verificationCount})
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveFilter('concern')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                        activeFilter === 'concern'
+                          ? 'bg-amber-50 text-amber-700 border border-amber-200 shadow-xs'
+                          : 'bg-slate-100 text-slate-600 hover:text-amber-700'
+                      }`}
+                    >
+                      Concerns ({concernCount})
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveFilter('verification')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                        activeFilter === 'verification'
+                          ? 'bg-violet-50 text-violet-700 border border-violet-200 shadow-xs'
+                          : 'bg-slate-100 text-slate-600 hover:text-violet-700'
+                      }`}
+                    >
+                      Needs Verification ({verificationCount})
+                    </button>
+                  </div>
+
+                  {filteredFindings.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setAllExpanded((prev) => !prev)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-indigo-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors ml-auto"
+                      title={allExpanded ? 'Collapse all finding details' : 'Expand all finding details'}
+                    >
+                      {allExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      <span>{allExpanded ? 'Collapse Details' : 'Expand All Details'}</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -423,7 +526,7 @@ export const ContentCheckView: React.FC = () => {
                   </p>
                 </div>
               ) : (
-                <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-3">
                   {filteredFindings.map((finding) => (
                     <FindingCard
                       key={finding.id}
@@ -431,6 +534,7 @@ export const ContentCheckView: React.FC = () => {
                       userRole={userRole}
                       onStatusChange={handleFindingStatusChange}
                       onApplySuggestion={handleApplySuggestion}
+                      forceExpand={allExpanded}
                     />
                   ))}
                 </div>

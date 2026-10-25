@@ -2,650 +2,653 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import app from '../src/app.js';
 import { config } from '../src/config/env.js';
-import { runGeminiAnalysis } from '../src/services/geminiService.js';
-import { runDeterministicChecks } from '../src/services/deterministicChecker.js';
 import {
   setUserKey,
   getUserKey,
+  getUserMaskedKey,
   hasUserKey,
   deleteUserKey,
   clearAllKeys,
   sanitizeApiKeyError,
-  testGeminiKey,
+  testIndividualModel,
+  getUserActiveModel,
+  setUserActiveModel,
+  getAllUserModelTests,
+  isModelTestPassed,
+  PREDEFINED_GEMINI_MODELS,
+  PREDEFINED_MODEL_IDS,
 } from '../src/services/userApiKeyService.js';
+import { encryptApiKey, decryptApiKey, maskApiKey } from '../src/utils/crypto.js';
 import { IGuideline } from '../src/types/index.js';
 
-describe('User-Scoped Gemini API Key Management & Isolation', () => {
+describe('Gemini Predefined Models, Individual Testing & Activation Architecture', () => {
   beforeEach(() => {
     clearAllKeys();
   });
 
-  it('Requirement: No platform-key fallback exists', () => {
-    // config object must NOT have a platform-wide geminiApiKey property
-    expect((config as any).geminiApiKey).toBeUndefined();
-  });
-
-  it('Requirement: Missing user key returns clear message and does not crash or fake findings', async () => {
-    const guidelines: IGuideline[] = [
-      {
-        id: 'g-1',
-        title: 'Brand Voice',
-        category: 'tone',
-        ruleDescription: 'Maintain professional voice.',
-        prohibitedTerms: [],
-        applicableContentTypes: ['all'],
-        status: 'active',
-      },
-    ];
-
-    // Calling runGeminiAnalysis without a userApiKey
-    const result = await runGeminiAnalysis('Some draft text here.', guidelines, 'all');
-
-    expect(result.available).toBe(false);
-    expect(result.findings).toEqual([]);
-    expect(result.message).toContain('No personal Gemini API key configured');
-    expect(result.message).toContain('AI Configuration');
-  });
-
-  it('Requirement: User key configured allows saving and status check without exposing key', async () => {
-    const sampleKey = 'AIzaSyValidSampleKeyForTestingUserScoped123';
-
-    // Mock fetch for Google model listing and GoogleGenerativeAI for generation ping
-    const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockImplementation(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        models: [
-          {
-            name: 'models/gemini-2.0-flash',
-            supportedGenerationMethods: ['generateContent'],
-          },
-        ],
-      }),
-    })) as any;
-
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    const spy = vi.spyOn(GoogleGenerativeAI.prototype, 'getGenerativeModel').mockReturnValue({
-      generateContent: vi.fn().mockResolvedValue({
-        response: { text: () => 'pong' },
-      }),
-    } as any);
-
-    try {
-      // Save key for reviewer
-      const saveRes = await request(app)
-        .post('/api/ai-config')
-        .set('x-demo-role', 'reviewer')
-        .send({ apiKey: sampleKey });
-
-      expect(saveRes.status).toBe(200);
-      expect(saveRes.body.success).toBe(true);
-      expect(saveRes.body.configured).toBe(true);
-      expect(saveRes.body.model).toBe('gemini-2.0-flash');
-
-      // Verify key is NOT returned in save response
-      expect(JSON.stringify(saveRes.body)).not.toContain(sampleKey);
-
-      // Check status for reviewer
-      const statusRes = await request(app)
-        .get('/api/ai-config')
-        .set('x-demo-role', 'reviewer');
-
-      expect(statusRes.status).toBe(200);
-      expect(statusRes.body.configured).toBe(true);
-      expect(statusRes.body.model).toBe('gemini-2.0-flash');
-
-      // Verify key is NOT returned in status response
-      expect(JSON.stringify(statusRes.body)).not.toContain(sampleKey);
-    } finally {
-      spy.mockRestore();
-      global.fetch = originalFetch;
-    }
-  });
-
-  it('Requirement: Saving an invalid key is rejected with status 400 and not marked active', async () => {
-    const invalidKey = 'AIzaSyInvalidKeyRejectedByGoogle123';
-
-    const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockImplementation(async () => ({
-      ok: false,
-      status: 400,
-      json: async () => ({
-        error: {
-          code: 400,
-          message: 'API key not valid. Please pass a valid API key.',
-          status: 'INVALID_ARGUMENT',
-          details: [{ reason: 'API_KEY_INVALID' }],
-        },
-      }),
-    })) as any;
-
-    try {
-      const saveRes = await request(app)
-        .post('/api/ai-config')
-        .set('x-demo-role', 'creator')
-        .send({ apiKey: invalidKey });
-
-      expect(saveRes.status).toBe(400);
-      expect(saveRes.body.success).toBe(false);
-      expect(saveRes.body.error).toContain('Invalid Gemini API key');
-      expect(saveRes.body.error).not.toContain(invalidKey);
-
-      // Verify key was NOT activated
-      const statusRes = await request(app)
-        .get('/api/ai-config')
-        .set('x-demo-role', 'creator');
-      expect(statusRes.body.configured).toBe(false);
-    } finally {
-      global.fetch = originalFetch;
-    }
-  });
-
-  it('Requirement: Key replacement replaces existing key with new verified key', async () => {
-    const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockImplementation(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        models: [
-          {
-            name: 'models/gemini-1.5-flash',
-            supportedGenerationMethods: ['generateContent'],
-          },
-        ],
-      }),
-    })) as any;
-
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    const spy = vi.spyOn(GoogleGenerativeAI.prototype, 'getGenerativeModel').mockReturnValue({
-      generateContent: vi.fn().mockResolvedValue({
-        response: { text: () => 'pong' },
-      }),
-    } as any);
-
-    try {
-      // First save
-      await request(app)
-        .post('/api/ai-config')
-        .set('x-demo-role', 'reviewer')
-        .send({ apiKey: 'AIzaSyFirstValidKey123456789' });
-      expect(getUserKey('demo-reviewer-1')).toBe('AIzaSyFirstValidKey123456789');
-
-      // Replace key
-      const replaceRes = await request(app)
-        .post('/api/ai-config')
-        .set('x-demo-role', 'reviewer')
-        .send({ apiKey: 'AIzaSySecondReplacementKey987654' });
-
-      expect(replaceRes.status).toBe(200);
-      expect(getUserKey('demo-reviewer-1')).toBe('AIzaSySecondReplacementKey987654');
-    } finally {
-      spy.mockRestore();
-      global.fetch = originalFetch;
-    }
-  });
-
-  it('Requirement: Removing the key clears it from user session', async () => {
-    setUserKey('demo-reviewer-1', 'AIzaSyFakeSampleKey1234567890');
-    expect(hasUserKey('demo-reviewer-1')).toBe(true);
-
-    const deleteRes = await request(app)
-      .delete('/api/ai-config')
-      .set('x-demo-role', 'reviewer');
-
-    expect(deleteRes.status).toBe(200);
-    expect(deleteRes.body.configured).toBe(false);
-    expect(hasUserKey('demo-reviewer-1')).toBe(false);
-  });
-
-  it('Requirement: Strict Isolation between users (User A key cannot be used or accessed by User B)', async () => {
-    const userAKey = 'AIzaSyUserAKey12345678901234567890';
-    setUserKey('demo-reviewer-1', userAKey);
-
-    // User A (reviewer) has key configured
-    const userAStatus = await request(app)
-      .get('/api/ai-config')
-      .set('x-demo-role', 'reviewer');
-    expect(userAStatus.body.configured).toBe(true);
-
-    // User B (creator) does NOT have key configured
-    const userBStatus = await request(app)
-      .get('/api/ai-config')
-      .set('x-demo-role', 'creator');
-    expect(userBStatus.body.configured).toBe(false);
-
-    // User B's internal key is undefined
-    expect(getUserKey('demo-creator-1')).toBeUndefined();
-    expect(getUserKey('demo-reviewer-1')).toBe(userAKey);
-
-    // User B deleting their key does not affect User A's key
-    await request(app)
-      .delete('/api/ai-config')
-      .set('x-demo-role', 'creator');
-
-    expect(hasUserKey('demo-reviewer-1')).toBe(true);
-    expect(hasUserKey('demo-creator-1')).toBe(false);
-  });
-
-  it('Requirement: Testing connection with empty or missing key is rejected', async () => {
-    const res = await request(app)
-      .post('/api/ai-config/test')
-      .set('x-demo-role', 'creator')
-      .send({});
-
-    expect(res.status).toBe(400);
-    expect(res.body.success).toBe(false);
-    expect(res.body.error).toContain('No Gemini API key provided');
-  });
-
-  it('Requirement: Invalid key produces sanitized error without leaking key', async () => {
-    const invalidKey = 'AIzaSyInvalidKeyTest1234567890123456789';
-    const testResult = await testGeminiKey(invalidKey);
-
-    expect(testResult.success).toBe(false);
-    // Error message must NOT leak the raw API key
-    expect(testResult.message).not.toContain(invalidKey);
-  });
-
-  it('Requirement: No key leakage in sanitizeApiKeyError', () => {
-    const rawErrorMessage = 'Request failed with key AIzaSyTestKeyLeakedInError1234567890: 400 Bad Request';
-    const sanitized = sanitizeApiKeyError(rawErrorMessage);
-
-    expect(sanitized).not.toContain('AIzaSyTestKeyLeakedInError1234567890');
-    expect(sanitized).toContain('[REDACTED_API_KEY]');
-  });
-
-  it('Requirement: Deterministic checks work 100% without any Gemini key', () => {
-    const guidelines: IGuideline[] = [
-      {
-        id: 'rule-term-1',
-        title: 'Platform Terminology',
-        category: 'terminology',
-        ruleDescription: 'Do not use the bot.',
-        prohibitedTerms: ['the bot'],
-        preferredTerm: 'BrandTrace AI',
-        applicableContentTypes: ['all'],
-        status: 'active',
-      },
-      {
-        id: 'rule-disc-1',
-        title: 'Mandatory Disclaimer',
-        category: 'disclaimer',
-        ruleDescription: 'Social posts must include the disclaimer.',
-        prohibitedTerms: [],
-        requiredTerms: ['BrandTrace AI is explainable'],
-        applicableContentTypes: ['social_post'],
-        status: 'active',
-      },
-    ];
-
-    const draft = 'Here is a release using the bot without required text.';
-    // Deterministic rules run completely independently of any AI key
-    const findings = runDeterministicChecks(draft, guidelines, 'social_post');
-
-    expect(findings.length).toBe(2);
-    expect(findings.some((f) => f.quotedText === 'the bot')).toBe(true);
-    expect(findings.some((f) => f.title.includes('Missing required'))).toBe(true);
-  });
-
-  it('Requirement: cleanApiKey correctly normalizes quotes, whitespace, and prefixes', async () => {
-    const { cleanApiKey } = await import('../src/services/userApiKeyService.js');
-
-    expect(cleanApiKey('  AIzaSyValidKey123  \n')).toBe('AIzaSyValidKey123');
-    expect(cleanApiKey('"AIzaSyQuotedKey123"')).toBe('AIzaSyQuotedKey123');
-    expect(cleanApiKey("'AIzaSySingleQuotedKey123'")).toBe('AIzaSySingleQuotedKey123');
-    expect(cleanApiKey('export GEMINI_API_KEY=AIzaSyExportKey123')).toBe('AIzaSyExportKey123');
-    expect(cleanApiKey('Bearer AIzaSyBearerKey123')).toBe('AIzaSyBearerKey123');
-  });
-
-  it('Requirement: Test Connection performs real minimal text-generation request', async () => {
-    const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockImplementation(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        models: [
-          {
-            name: 'models/gemini-2.0-flash',
-            supportedGenerationMethods: ['generateContent'],
-          },
-        ],
-      }),
-    })) as any;
-
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    let pingCalled = false;
-    const spy = vi.spyOn(GoogleGenerativeAI.prototype, 'getGenerativeModel').mockReturnValue({
-      generateContent: vi.fn().mockImplementation(async (prompt: string) => {
-        if (prompt === 'ping') pingCalled = true;
-        return { response: { text: () => 'pong' } };
-      }),
-    } as any);
-
-    try {
-      const res = await testGeminiKey('AIzaSyValidKeyForPingTest123');
-      expect(res.success).toBe(true);
-      expect(res.model).toBe('gemini-2.0-flash');
-      expect(res.message).toContain('Real text generation is operational');
-      expect(pingCalled).toBe(true);
-    } finally {
-      spy.mockRestore();
-      global.fetch = originalFetch;
-    }
-  });
-
-  it('Feature B: Model discovery filters only models that explicitly support generateContent', async () => {
-    const { getAvailableGeminiModels } = await import('../src/services/userApiKeyService.js');
-    const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockImplementation(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        models: [
-          {
-            name: 'models/gemini-2.0-flash',
-            supportedGenerationMethods: ['generateContent', 'countTokens'],
-          },
-          {
-            name: 'models/text-embedding-004',
-            supportedGenerationMethods: ['embedContent'], // Should be filtered OUT
-          },
-          {
-            name: 'models/gemini-1.5-pro',
-            supportedGenerationMethods: ['generateContent'],
-          },
-        ],
-      }),
-    })) as any;
-
-    try {
-      const models = await getAvailableGeminiModels('AIzaSyValidSampleKey');
-      expect(models).toEqual(['gemini-2.0-flash', 'gemini-1.5-pro']);
-      expect(models).not.toContain('text-embedding-004');
-    } finally {
-      global.fetch = originalFetch;
-    }
-  });
-
-  it('Feature B: Manual model selection tests only that chosen model with one ping', async () => {
-    const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockImplementation(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        models: [
-          { name: 'models/gemini-2.0-flash', supportedGenerationMethods: ['generateContent'] },
-          { name: 'models/gemini-1.5-pro', supportedGenerationMethods: ['generateContent'] },
-        ],
-      }),
-    })) as any;
-
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    const testedModels: string[] = [];
-    const spy = vi.spyOn(GoogleGenerativeAI.prototype, 'getGenerativeModel').mockImplementation(({ model }: any) => {
-      testedModels.push(model);
-      return {
-        generateContent: vi.fn().mockResolvedValue({ response: { text: () => 'pong' } }),
-      } as any;
+  describe('A. Predefined Model List', () => {
+    it('1. Predefined model list is populated from centralized configuration', () => {
+      expect(PREDEFINED_GEMINI_MODELS.length).toBe(4);
+      expect(PREDEFINED_MODEL_IDS).toContain('gemini-3.8-flash');
+      expect(PREDEFINED_MODEL_IDS).toContain('gemini-3.6-flash');
+      expect(PREDEFINED_MODEL_IDS).toContain('gemini-2.5-flash');
+      expect(PREDEFINED_MODEL_IDS).toContain('gemini-2.5-flash-lite');
     });
 
-    try {
-      const res = await testGeminiKey('AIzaSyValidSampleKey', 'gemini-1.5-pro');
-      expect(res.success).toBe(true);
-      expect(res.model).toBe('gemini-1.5-pro');
-      // Must test strictly the requested model
-      expect(testedModels).toEqual(['gemini-1.5-pro']);
-    } finally {
-      spy.mockRestore();
-      global.fetch = originalFetch;
-    }
-  });
-
-  it('Feature B: Unsupported model requested returns clear error and rejects verification', async () => {
-    const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockImplementation(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        models: [
-          { name: 'models/gemini-2.0-flash', supportedGenerationMethods: ['generateContent'] },
-        ],
-      }),
-    })) as any;
-
-    try {
-      const res = await testGeminiKey('AIzaSyValidSampleKey', 'non-existent-or-unsupported-model');
-      expect(res.success).toBe(false);
-      expect(res.message).toContain('not supported or not available');
-      expect(res.model).toBe('non-existent-or-unsupported-model');
-    } finally {
-      global.fetch = originalFetch;
-    }
-  });
-
-  it('Feature B & C: Quota exhaustion (429) stops retries immediately and extracts retryDelay', async () => {
-    const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockImplementation(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        models: [
-          { name: 'models/gemini-2.0-flash', supportedGenerationMethods: ['generateContent'] },
-          { name: 'models/gemini-1.5-flash', supportedGenerationMethods: ['generateContent'] },
-          { name: 'models/gemini-1.5-pro', supportedGenerationMethods: ['generateContent'] },
-        ],
-      }),
-    })) as any;
-
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    let attempts = 0;
-    const spy = vi.spyOn(GoogleGenerativeAI.prototype, 'getGenerativeModel').mockImplementation(() => {
-      attempts++;
-      return {
-        generateContent: vi.fn().mockRejectedValue({
-          status: 429,
-          message: '[429 Too Many Requests] Resource has been exhausted (e.g. check quota). retryDelay: "24s"',
-          details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '24s' }],
-        }),
-      } as any;
+    it('2. Model identifiers and human-readable display labels remain separate', () => {
+      const flash = PREDEFINED_GEMINI_MODELS.find((m) => m.id === 'gemini-3.8-flash');
+      expect(flash).toBeDefined();
+      expect(flash?.id).toBe('gemini-3.8-flash');
+      expect(flash?.name).toBe('Gemini 3.8 Flash');
+      expect(flash?.description).toBeDefined();
     });
 
-    try {
-      // In auto mode, ordinarily candidates would be retried, but on 429 it MUST NOT retry
-      const res = await testGeminiKey('AIzaSyValidKey', 'auto');
-      expect(res.success).toBe(false);
-      expect(res.message).toContain('rate limit or quota exceeded (429)');
-      expect(res.message).toContain('24s');
-      expect(res.retryDelay).toBe('24s');
-      // Crucial: Only 1 attempt made, did not try other models
-      expect(attempts).toBe(1);
-    } finally {
-      spy.mockRestore();
-      global.fetch = originalFetch;
-    }
-  });
-
-  it('Feature B: User model preference is saved and isolated per user', async () => {
-    const {
-      setUserModelPreference,
-      getUserModelPreference,
-    } = await import('../src/services/userApiKeyService.js');
-
-    setUserModelPreference('user-alice', 'gemini-1.5-pro');
-    setUserModelPreference('user-bob', 'gemini-2.0-flash');
-
-    expect(getUserModelPreference('user-alice')).toBe('gemini-1.5-pro');
-    expect(getUserModelPreference('user-bob')).toBe('gemini-2.0-flash');
-    expect(getUserModelPreference('user-charlie')).toBe('auto'); // Default
-  });
-
-  it('Feature B: Refresh Models endpoint returns list of available models for authenticated user', async () => {
-    setUserKey('demo-reviewer-1', 'AIzaSyValidReviewerKey123');
-
-    const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockImplementation(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        models: [
-          { name: 'models/gemini-2.0-flash', supportedGenerationMethods: ['generateContent'] },
-          { name: 'models/gemini-1.5-flash', supportedGenerationMethods: ['generateContent'] },
-        ],
-      }),
-    })) as any;
-
-    try {
+    it('3. GET /api/ai-config/models returns predefined list immediately without external API call', async () => {
       const res = await request(app)
         .get('/api/ai-config/models')
         .set('x-demo-role', 'reviewer');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.models).toEqual(['gemini-2.0-flash', 'gemini-1.5-flash']);
-      expect(res.body.count).toBe(2);
-    } finally {
-      global.fetch = originalFetch;
-    }
-  });
+      expect(res.body.models).toEqual(PREDEFINED_GEMINI_MODELS);
+      expect(res.body.count).toBe(PREDEFINED_GEMINI_MODELS.length);
+    });
 
-  it('Feature B: POST /api/ai-config/models discovers models with provided apiKey before saving', async () => {
-    const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockImplementation(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        models: [
-          { name: 'models/gemini-2.0-flash', supportedGenerationMethods: ['generateContent'] },
-          { name: 'models/gemini-1.5-flash', supportedGenerationMethods: ['generateContent'] },
-        ],
-      }),
-    })) as any;
-
-    try {
+    it('4. Invalid model identifiers are rejected by backend validation', async () => {
       const res = await request(app)
-        .post('/api/ai-config/models')
-        .set('x-demo-role', 'creator')
-        .send({ apiKey: 'AIzaSyUnsavedKeyForModelDiscovery123' });
-
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.models).toEqual(['gemini-2.0-flash', 'gemini-1.5-flash']);
-      expect(res.body.count).toBe(2);
-    } finally {
-      global.fetch = originalFetch;
-    }
-  });
-
-  it('Feature B & C: Refresh failure preserves cached models and returns error with retryDelay', async () => {
-    const { setUserAvailableModels } = await import('../src/services/userApiKeyService.js');
-    setUserKey('demo-reviewer-1', 'AIzaSyValidReviewerKey123');
-    setUserAvailableModels('demo-reviewer-1', ['gemini-2.0-flash']);
-
-    const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockImplementation(async () => ({
-      ok: false,
-      status: 429,
-      json: async () => ({
-        error: {
-          code: 429,
-          message: 'Resource has been exhausted (e.g. check quota). retryDelay: "30s"',
-          status: 'RESOURCE_EXHAUSTED',
-          details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '30s' }],
-        },
-      }),
-    })) as any;
-
-    try {
-      const res = await request(app)
-        .post('/api/ai-config/models')
+        .post('/api/ai-config/test')
         .set('x-demo-role', 'reviewer')
-        .send({});
+        .send({
+          model: 'unsupported-hallucinated-model',
+          apiKey: 'AIzaSyValidDummyKeyForTesting12345',
+        });
 
       expect(res.status).toBe(400);
       expect(res.body.success).toBe(false);
-      expect(res.body.error).toContain('rate limit or quota exceeded (429)');
-      expect(res.body.retryDelay).toBe('30s');
-      // Requirement 7: Preserves cached models!
-      expect(res.body.models).toEqual(['gemini-2.0-flash']);
-    } finally {
-      global.fetch = originalFetch;
-    }
+      expect(res.body.error).toContain('not in the predefined Gemini model list');
+    });
+
+    it('5. Failed model tests do NOT remove or filter models from the predefined list', async () => {
+      setUserKey('demo-reviewer-1', 'AIzaSyValidDummyKeyForTesting12345');
+
+      const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: 429,
+              status: 'RESOURCE_EXHAUSTED',
+              message: 'ResourceExhausted: Quota exceeded for quota metric',
+            },
+          }),
+          { status: 429, headers: { 'Content-Type': 'application/json' } }
+        );
+      });
+
+      try {
+        // Test Model A fails
+        const testRes = await request(app)
+          .post('/api/ai-config/test')
+          .set('x-demo-role', 'reviewer')
+          .send({ model: 'gemini-3.8-flash' });
+
+        expect(testRes.status).toBe(400);
+        expect(testRes.body.test.status).toBe('quota_exceeded');
+
+        // Status check verifies predefined models are still intact
+        const statusRes = await request(app)
+          .get('/api/ai-config')
+          .set('x-demo-role', 'reviewer');
+
+        expect(statusRes.body.predefinedModels.length).toBe(PREDEFINED_GEMINI_MODELS.length);
+        expect(statusRes.body.availableModels).toEqual(PREDEFINED_MODEL_IDS);
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 
-  it('Feature B: GET /api/ai-config returns modelsError when background discovery fails', async () => {
-    setUserKey('demo-reviewer-1', 'AIzaSyKeyThatFailsListing123');
+  describe('B. Individual Model Testing', () => {
+    it('6. Testing Model A, B, and C independently with distinct statuses', async () => {
+      const apiKey = 'AIzaSySampleKeyForIndividualTesting123';
+      setUserKey('demo-reviewer-1', apiKey);
 
-    const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockImplementation(async () => ({
-      ok: false,
-      status: 403,
-      json: async () => ({
-        error: {
-          code: 403,
-          message: 'The Google Generative Language API is disabled for your Google Cloud project.',
-          status: 'PERMISSION_DENIED',
-          details: [{ reason: 'SERVICE_DISABLED' }],
-        },
-      }),
-    })) as any;
+      const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any, init: any) => {
+        const urlStr = String(url);
+        // Verify exact Google REST path and auth header
+        expect(init?.headers?.['x-goog-api-key']).toBe(apiKey);
 
-    try {
+        if (urlStr.includes('gemini-3.8-flash:generateContent')) {
+          // Model A: fails with 429 quota
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: 429,
+                status: 'RESOURCE_EXHAUSTED',
+                message: 'ResourceExhausted: Quota exceeded for quota metric',
+                details: [{ retryDelay: '30s' }],
+              },
+            }),
+            { status: 429, headers: { 'Content-Type': 'application/json' } }
+          );
+        } else if (urlStr.includes('gemini-3.6-flash:generateContent')) {
+          // Model B: passes with real text generation
+          return new Response(
+            JSON.stringify({
+              candidates: [
+                {
+                  content: { parts: [{ text: 'pong' }], role: 'model' },
+                  finishReason: 'STOP',
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        } else if (urlStr.includes('gemini-2.5-flash:generateContent')) {
+          // Model C: fails with 404 not found
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: 404,
+                status: 'NOT_FOUND',
+                message: 'models/gemini-2.5-flash is not found for API version v1beta',
+              },
+            }),
+            { status: 404, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return new Response('Not found', { status: 404 });
+      });
+
+      try {
+        // Test Model A (gemini-3.8-flash)
+        const resA = await request(app)
+          .post('/api/ai-config/test')
+          .set('x-demo-role', 'reviewer')
+          .send({ model: 'gemini-3.8-flash' });
+
+        expect(resA.status).toBe(400);
+        expect(resA.body.test.status).toBe('quota_exceeded');
+        expect(resA.body.test.message).toContain('rate limit or quota exceeded (429)');
+
+        // Verify Model B and C have NOT been tested yet (no automatic testing loop)
+        const testsAfterA = getAllUserModelTests('demo-reviewer-1');
+        expect(testsAfterA['gemini-3.8-flash']?.status).toBe('quota_exceeded');
+        expect(testsAfterA['gemini-3.6-flash']).toBeUndefined();
+        expect(testsAfterA['gemini-2.5-flash']).toBeUndefined();
+
+        // Test Model B (gemini-3.6-flash) independently
+        const resB = await request(app)
+          .post('/api/ai-config/test')
+          .set('x-demo-role', 'reviewer')
+          .send({ model: 'gemini-3.6-flash' });
+
+        expect(resB.status).toBe(200);
+        expect(resB.body.success).toBe(true);
+        expect(resB.body.test.status).toBe('passed');
+
+        // Test Model C (gemini-2.5-flash) independently
+        const resC = await request(app)
+          .post('/api/ai-config/test')
+          .set('x-demo-role', 'reviewer')
+          .send({ model: 'gemini-2.5-flash' });
+
+        expect(resC.status).toBe(400);
+        expect(resC.body.test.status).toBe('model_not_found');
+
+        // Verify all 3 models retain their independent test statuses
+        const allTests = getAllUserModelTests('demo-reviewer-1');
+        expect(allTests['gemini-3.8-flash'].status).toBe('quota_exceeded');
+        expect(allTests['gemini-3.6-flash'].status).toBe('passed');
+        expect(allTests['gemini-2.5-flash'].status).toBe('model_not_found');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('7. Rate limit retry delay is extracted and reported', async () => {
+      setUserKey('demo-reviewer-1', 'AIzaSyValidDummyKey123');
+
+      const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: 429,
+              status: 'RESOURCE_EXHAUSTED',
+              message: 'Quota exceeded. Please retry after 25s',
+              details: [{ retryDelay: '25s' }],
+            },
+          }),
+          { status: 429, headers: { 'Content-Type': 'application/json' } }
+        );
+      });
+
+      try {
+        const res = await request(app)
+          .post('/api/ai-config/test')
+          .set('x-demo-role', 'reviewer')
+          .send({ model: 'gemini-3.8-flash' });
+
+        expect(res.status).toBe(400);
+        expect(res.body.test.status).toBe('quota_exceeded');
+        expect(res.body.retryDelay).toBe('25s');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('8. A user can retry testing a failed model after failure', async () => {
+      setUserKey('demo-reviewer-1', 'AIzaSyValidDummyKey123');
+      let attempt = 0;
+
+      const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        attempt++;
+        if (attempt === 1) {
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: 429,
+                status: 'RESOURCE_EXHAUSTED',
+                message: 'ResourceExhausted: Quota exceeded',
+              },
+            }),
+            { status: 429, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: { parts: [{ text: 'pong' }], role: 'model' },
+                finishReason: 'STOP',
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      });
+
+      try {
+        // Attempt 1: Fails
+        const res1 = await request(app)
+          .post('/api/ai-config/test')
+          .set('x-demo-role', 'reviewer')
+          .send({ model: 'gemini-3.8-flash' });
+        expect(res1.status).toBe(400);
+        expect(res1.body.test.status).toBe('quota_exceeded');
+
+        // Attempt 2: Retried and passes
+        const res2 = await request(app)
+          .post('/api/ai-config/test')
+          .set('x-demo-role', 'reviewer')
+          .send({ model: 'gemini-3.8-flash' });
+        expect(res2.status).toBe(200);
+        expect(res2.body.test.status).toBe('passed');
+        expect(isModelTestPassed('demo-reviewer-1', 'gemini-3.8-flash')).toBe(true);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
+  describe('C. Model Activation & Persistence', () => {
+    it('9. A model cannot be activated without a successful generation test', async () => {
+      setUserKey('demo-reviewer-1', 'AIzaSyValidDummyKey123');
+
+      // Attempt activation without testing
       const res = await request(app)
+        .post('/api/ai-config/activate')
+        .set('x-demo-role', 'reviewer')
+        .send({ model: 'gemini-3.6-flash' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toContain('must pass a real generation test before activation');
+      expect(getUserActiveModel('demo-reviewer-1')).toBeUndefined();
+    });
+
+    it('10. Activating a successfully tested model persists authoritative active model', async () => {
+      setUserKey('demo-reviewer-1', 'AIzaSyValidDummyKey123');
+
+      const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        return new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: { parts: [{ text: 'pong' }], role: 'model' },
+                finishReason: 'STOP',
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      });
+
+      try {
+        // 1. Test model
+        const testRes = await request(app)
+          .post('/api/ai-config/test')
+          .set('x-demo-role', 'reviewer')
+          .send({ model: 'gemini-3.6-flash' });
+        expect(testRes.status).toBe(200);
+
+        // 2. Activate model
+        const activateRes = await request(app)
+          .post('/api/ai-config/activate')
+          .set('x-demo-role', 'reviewer')
+          .send({ model: 'gemini-3.6-flash' });
+
+        expect(activateRes.status).toBe(200);
+        expect(activateRes.body.success).toBe(true);
+        expect(activateRes.body.activeModel).toBe('gemini-3.6-flash');
+        expect(getUserActiveModel('demo-reviewer-1')).toBe('gemini-3.6-flash');
+
+        // 3. Status check simulates page refresh
+        const statusRes = await request(app)
+          .get('/api/ai-config')
+          .set('x-demo-role', 'reviewer');
+        expect(statusRes.body.activeModel).toBe('gemini-3.6-flash');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('11. User configuration isolation: Reviewer activation does not affect Creator', async () => {
+      setUserKey('demo-reviewer-1', 'AIzaSyReviewerKey123');
+      setUserKey('demo-creator-1', 'AIzaSyCreatorKey456');
+
+      setUserActiveModel('demo-reviewer-1', 'gemini-3.6-flash');
+      // Creator has not activated any model
+      expect(getUserActiveModel('demo-creator-1')).toBeUndefined();
+
+      // Check status for Reviewer
+      const reviewerRes = await request(app)
         .get('/api/ai-config')
         .set('x-demo-role', 'reviewer');
+      expect(reviewerRes.body.activeModel).toBe('gemini-3.6-flash');
 
-      expect(res.status).toBe(200);
-      expect(res.body.configured).toBe(true);
-      expect(res.body.availableModels).toEqual([]);
-      expect(res.body.modelsError).toContain('API is disabled');
-    } finally {
-      global.fetch = originalFetch;
-    }
+      // Check status for Creator
+      const creatorRes = await request(app)
+        .get('/api/ai-config')
+        .set('x-demo-role', 'creator');
+      expect(creatorRes.body.activeModel).toBeNull();
+    });
   });
 
-  it('Feature B: PATCH /api/ai-config/model updates model preference after successful test ping', async () => {
-    setUserKey('demo-reviewer-1', 'AIzaSyValidReviewerKey123');
-
-    const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockImplementation(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        models: [
-          { name: 'models/gemini-1.5-pro', supportedGenerationMethods: ['generateContent'] },
-        ],
-      }),
-    })) as any;
-
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    const spy = vi.spyOn(GoogleGenerativeAI.prototype, 'getGenerativeModel').mockReturnValue({
-      generateContent: vi.fn().mockResolvedValue({
-        response: { text: () => 'pong' },
-      }),
-    } as any);
-
-    try {
+  describe('D. Compliance Analysis Powered by Active Model', () => {
+    it('12. Deterministic rules run when Gemini is not configured', async () => {
+      const draftText = 'We launched our cheap tool today.';
       const res = await request(app)
-        .patch('/api/ai-config/model')
-        .set('x-demo-role', 'reviewer')
-        .send({ selectedModel: 'gemini-1.5-pro' });
+        .post('/api/content/check')
+        .set('x-demo-role', 'creator')
+        .send({
+          text: draftText,
+          contentType: 'blog_post',
+        });
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.selectedModel).toBe('gemini-1.5-pro');
-      expect(res.body.activeModel).toBe('gemini-1.5-pro');
+      expect(res.body.findings.length).toBe(1);
+      expect(res.body.findings[0].type).toBe('Rule Violation');
+      expect(res.body.findings[0].quotedText).toBe('cheap tool');
+      expect(res.body.aiStatus.available).toBe(false);
+      expect(res.body.aiStatus.message).toContain('No personal Gemini API key configured');
+    });
 
-      // Verify preference was persisted in user store
-      const { getUserModelPreference, getUserVerifiedModel } = await import(
-        '../src/services/userApiKeyService.js'
+    it('13. Compliance analysis uses the EXACT active model identifier without silent substitution', async () => {
+      setUserKey('demo-creator-1', 'AIzaSyCreatorKey123');
+      setUserActiveModel('demo-creator-1', 'gemini-2.5-flash');
+
+      let modelPassedToGemini: string | undefined;
+
+      const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
+        const urlStr = String(url);
+        const match = urlStr.match(/\/models\/([^:]+):generateContent/);
+        if (match) modelPassedToGemini = match[1];
+
+        return new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify({
+                        findings: [
+                          {
+                            type: 'Potential Concern',
+                            severity: 'low',
+                            quotedText: 'revolutionary breakthrough',
+                            title: 'Exaggerated Tone',
+                            explanation: 'Tone should be measured.',
+                            guidelineId: null,
+                            suggestedCorrection: 'significant update',
+                          },
+                        ],
+                      }),
+                    },
+                  ],
+                  role: 'model',
+                },
+                finishReason: 'STOP',
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      });
+
+      try {
+        const res = await request(app)
+          .post('/api/content/check')
+          .set('x-demo-role', 'creator')
+          .send({
+            text: 'We launched a revolutionary breakthrough in our product.',
+            contentType: 'blog_post',
+          });
+
+        expect(res.status).toBe(200);
+        expect(modelPassedToGemini).toBe('gemini-2.5-flash');
+        expect(res.body.aiStatus.available).toBe(true);
+        expect(res.body.aiStatus.model).toBe('gemini-2.5-flash');
+        expect(res.body.findings.length).toBe(1);
+        expect(res.body.findings[0].title).toBe('Exaggerated Tone');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('14. Deterministic findings survive Gemini HTTP 429 quota failure', async () => {
+      setUserKey('demo-creator-1', 'AIzaSyCreatorKey123');
+      setUserActiveModel('demo-creator-1', 'gemini-3.8-flash');
+
+      const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: 429,
+              status: 'RESOURCE_EXHAUSTED',
+              message: 'ResourceExhausted: Quota exceeded for quota metric',
+            },
+          }),
+          { status: 429, headers: { 'Content-Type': 'application/json' } }
+        );
+      });
+
+      try {
+        const res = await request(app)
+          .post('/api/content/check')
+          .set('x-demo-role', 'creator')
+          .send({
+            text: 'We launched our cheap tool across the nation today.',
+            contentType: 'blog_post',
+          });
+
+        expect(res.status).toBe(200);
+        // Deterministic finding survives
+        expect(res.body.findings.length).toBe(1);
+        expect(res.body.findings[0].quotedText).toBe('cheap tool');
+        expect(res.body.findings[0].type).toBe('Rule Violation');
+
+        // AI status indicates 429 failure accurately
+        expect(res.body.aiStatus.available).toBe(false);
+        expect(res.body.aiStatus.model).toBe('gemini-3.8-flash');
+        expect(res.body.aiStatus.message).toContain('rate limit or quota exceeded (429)');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('15. Deterministic findings survive Gemini timeout or network failure', async () => {
+      setUserKey('demo-creator-1', 'AIzaSyCreatorKey123');
+      setUserActiveModel('demo-creator-1', 'gemini-3.8-flash');
+
+      const spy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(
+        new Error('ETIMEDOUT connection timed out')
       );
-      expect(getUserModelPreference('demo-reviewer-1')).toBe('gemini-1.5-pro');
-      expect(getUserVerifiedModel('demo-reviewer-1')).toBe('gemini-1.5-pro');
-    } finally {
-      spy.mockRestore();
-      global.fetch = originalFetch;
-    }
+
+      try {
+        const res = await request(app)
+          .post('/api/content/check')
+          .set('x-demo-role', 'creator')
+          .send({
+            text: 'Do not use this cheap tool.',
+            contentType: 'blog_post',
+          });
+
+        expect(res.status).toBe(200);
+        expect(res.body.findings.length).toBe(1);
+        expect(res.body.findings[0].quotedText).toBe('cheap tool');
+        expect(res.body.aiStatus.available).toBe(false);
+        expect(res.body.aiStatus.message).toContain('Network connectivity');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
+  describe('E. Security and Configuration State Integrity', () => {
+    it('16. No platform-wide Gemini fallback key exists', () => {
+      expect((config as any).geminiApiKey).toBeUndefined();
+    });
+
+    it('17. Full API keys are never exposed in configuration or status responses', async () => {
+      const secretKey = 'AIzaSyPrivateSuperSecretKeyDoNotExpose12345';
+      setUserKey('demo-reviewer-1', secretKey);
+
+      const statusRes = await request(app)
+        .get('/api/ai-config')
+        .set('x-demo-role', 'reviewer');
+
+      expect(statusRes.status).toBe(200);
+      expect(JSON.stringify(statusRes.body)).not.toContain(secretKey);
+      expect(statusRes.body.maskedKey.startsWith('AIza')).toBe(true);
+      expect(statusRes.body.maskedKey.endsWith('2345')).toBe(true);
+      expect(statusRes.body.maskedKey).toContain('•');
+    });
+
+    it('18. Error messages sanitize potential API keys', () => {
+      const leak = 'Failed at key AIzaSyLeakedKeyPattern123456789 with error';
+      const sanitized = sanitizeApiKeyError(leak);
+      expect(sanitized).not.toContain('AIzaSyLeakedKeyPattern123456789');
+      expect(sanitized).toContain('[REDACTED_API_KEY]');
+    });
+
+    it('19. DELETE /api/ai-config clears user session key, active model, and test cache', async () => {
+      setUserKey('demo-reviewer-1', 'AIzaSyTestKey123');
+      setUserActiveModel('demo-reviewer-1', 'gemini-3.8-flash');
+
+      const delRes = await request(app)
+        .delete('/api/ai-config')
+        .set('x-demo-role', 'reviewer');
+
+      expect(delRes.status).toBe(200);
+      expect(delRes.body.configured).toBe(false);
+      expect(delRes.body.activeModel).toBeNull();
+      expect(hasUserKey('demo-reviewer-1')).toBe(false);
+      expect(getUserActiveModel('demo-reviewer-1')).toBeUndefined();
+    });
+
+    it('20. AES-256-GCM encryption at rest encrypts and decrypts correctly', () => {
+      const testKey = 'AIzaSyRealDeveloperSecretKey987654321';
+      const encryptedData = encryptApiKey(testKey);
+      expect(encryptedData.encrypted).not.toBe(testKey);
+      expect(encryptedData.iv).toBeDefined();
+      expect(encryptedData.authTag).toBeDefined();
+
+      const decrypted = decryptApiKey(encryptedData.encrypted, encryptedData.iv, encryptedData.authTag);
+      expect(decrypted).toBe(testKey);
+    });
+
+    it('21. Masked bullets are rejected and cannot overwrite saved key', async () => {
+      setUserKey('demo-reviewer-1', 'AIzaSyOriginalSavedKey12345');
+
+      const res = await request(app)
+        .post('/api/ai-config/key')
+        .set('x-demo-role', 'reviewer')
+        .send({ apiKey: '••••••••••••••••••••••••••••••' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toContain('masked placeholder');
+
+      // Original key remains safe
+      expect(getUserKey('demo-reviewer-1')).toBe('AIzaSyOriginalSavedKey12345');
+    });
+
+    it('22. Diagnostic endpoint runs model listing and minimal live generation test', async () => {
+      setUserKey('demo-reviewer-1', 'AIzaSyDiagnosticTestKey123');
+
+      const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
+        const urlStr = String(url);
+        if (urlStr.endsWith('/v1beta/models')) {
+          return new Response(
+            JSON.stringify({
+              models: [
+                {
+                  name: 'models/gemini-3.8-flash',
+                  displayName: 'Gemini 3.8 Flash',
+                  supportedGenerationMethods: ['generateContent'],
+                },
+                {
+                  name: 'models/gemini-3.6-flash',
+                  displayName: 'Gemini 3.6 Flash',
+                  supportedGenerationMethods: ['generateContent'],
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        } else if (urlStr.includes(':generateContent')) {
+          return new Response(
+            JSON.stringify({
+              candidates: [
+                {
+                  content: { parts: [{ text: 'pong' }], role: 'model' },
+                  finishReason: 'STOP',
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return new Response('Not found', { status: 404 });
+      });
+
+      try {
+        const diagRes = await request(app)
+          .get('/api/ai-config/diagnose')
+          .set('x-demo-role', 'reviewer');
+
+        expect(diagRes.status).toBe(200);
+        expect(diagRes.body.success).toBe(true);
+        expect(diagRes.body.totalModels).toBe(2);
+        expect(diagRes.body.liveGenerationTest).toBeDefined();
+        expect(diagRes.body.liveGenerationTest.generationSucceeded).toBe(true);
+        expect(diagRes.body.liveGenerationTest.candidateId).toBe('gemini-3.8-flash');
+        expect(diagRes.body.predefinedCandidates.find((m: any) => m.id === 'gemini-3.8-flash')?.accessible).toBe(true);
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 });
-

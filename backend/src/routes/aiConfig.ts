@@ -1,21 +1,25 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
-import { config } from '../config/env.js';
 import {
   hasUserKey,
   getUserKey,
+  getUserMaskedKey,
   setUserKey,
   deleteUserKey,
-  testGeminiKey,
   cleanApiKey,
-  getUserVerifiedModel,
-  setUserVerifiedModel,
-  getUserModelPreference,
-  setUserModelPreference,
-  getUserAvailableModels,
-  setUserAvailableModels,
-  getAvailableGeminiModels,
+  getUserActiveModel,
+  setUserActiveModel,
+  getUserSelectedModel,
+  setUserSelectedModel,
+  testIndividualModel,
+  getAllUserModelTests,
+  isModelTestPassed,
+  ensureUserConfigLoaded,
+  PREDEFINED_GEMINI_MODELS,
+  PREDEFINED_MODEL_IDS,
+  isValidPredefinedModel,
 } from '../services/userApiKeyService.js';
+import { listAvailableGeminiModels, executeGeminiGenerateContent } from '../services/geminiClient.js';
 import { authenticate, AuthenticatedRequest } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validate.js';
 
@@ -29,102 +33,104 @@ const SaveKeySchema = z.object({
   selectedModel: z.string().optional(),
 });
 
-const TestKeySchema = z.object({
+const TestModelSchema = z.object({
+  model: z.string().min(1, 'Model identifier is required'),
   apiKey: z.string().optional(),
-  selectedModel: z.string().optional(),
+});
+
+const ActivateModelSchema = z.object({
+  model: z.string().min(1, 'Model identifier is required'),
+  apiKey: z.string().optional(),
 });
 
 const UpdateModelSchema = z.object({
   selectedModel: z.string().min(1, 'Model selection is required'),
 });
 
-// GET /api/ai-config - Get key configuration status and model selection for the requesting user
+// GET /api/ai-config - Get key configuration status, active model, predefined models, and test records
 // Note: NEVER returns the API key itself
 router.get('/', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id || 'anonymous';
-  const isConfigured = hasUserKey(userId);
-  const activeModel = getUserVerifiedModel(userId) || config.geminiModel;
-  const selectedModel = getUserModelPreference(userId);
-  let availableModels = getUserAvailableModels(userId);
-  let modelsError: string | undefined = undefined;
-  let retryDelay: string | undefined = undefined;
+  await ensureUserConfigLoaded(userId);
 
-  // If user is configured but availableModels is empty in cache, attempt fetch
-  if (isConfigured && (!availableModels || availableModels.length === 0)) {
-    const key = getUserKey(userId);
-    if (key) {
-      try {
-        availableModels = await getAvailableGeminiModels(key);
-        setUserAvailableModels(userId, availableModels);
-      } catch (err: any) {
-        modelsError = err.message || 'Failed to list Gemini models';
-        retryDelay = err.retryDelay;
-      }
-    }
-  }
+  const isConfigured = hasUserKey(userId);
+  const activeModel = isConfigured ? getUserActiveModel(userId) : null;
+  const selectedModel = getUserSelectedModel(userId) || (activeModel || 'gemini-3.8-flash');
+  const maskedKey = isConfigured ? getUserMaskedKey(userId) : null;
+  const modelTestResults = getAllUserModelTests(userId);
 
   res.json({
     success: true,
     configured: isConfigured,
-    model: activeModel,
+    hasApiKey: isConfigured,
+    maskedKey: maskedKey || null,
+    activeModel: activeModel || null,
+    model: activeModel || null,
     selectedModel,
-    activeModel,
-    availableModels: availableModels || [],
-    modelsError,
-    retryDelay,
+    predefinedModels: PREDEFINED_GEMINI_MODELS,
+    availableModels: PREDEFINED_MODEL_IDS,
+    modelTestResults,
     message: isConfigured
-      ? `Personal Gemini API key is configured and active for your session using ${activeModel}.`
-      : 'No personal Gemini API key configured. Enter your key to enable AI tone and claims analysis.',
+      ? activeModel
+        ? `Personal Gemini API key is configured and active for your session using ${activeModel}.`
+        : 'Personal Gemini API key is configured. Please test and activate a model to enable AI compliance analysis.'
+      : 'No personal Gemini API key configured. Enter your key to test and activate an AI compliance engine.',
   });
 });
 
-// Handler for fetching available models (supports GET and POST with optional apiKey body/query)
-const handleModelsDiscovery = async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user?.id || 'anonymous';
-  const providedKey = req.body?.apiKey || (typeof req.query?.apiKey === 'string' ? req.query.apiKey : undefined);
-  const cleanProvidedKey = providedKey ? cleanApiKey(providedKey) : undefined;
-  const keyToUse = cleanProvidedKey || getUserKey(userId);
+// GET & POST /api/ai-config/models - Return the predefined model candidates immediately without external API call
+router.get('/models', authenticate, (_req: AuthenticatedRequest, res: Response) => {
+  res.json({
+    success: true,
+    models: PREDEFINED_GEMINI_MODELS,
+    count: PREDEFINED_GEMINI_MODELS.length,
+    message: `Predefined Gemini model candidates loaded (${PREDEFINED_GEMINI_MODELS.length} models).`,
+  });
+});
 
-  if (!keyToUse) {
-    res.status(400).json({
-      success: false,
-      error: 'No personal Gemini API key configured or provided. Please enter an API key.',
-      models: getUserAvailableModels(userId) || [],
-    });
-    return;
-  }
+router.post('/models', authenticate, (_req: AuthenticatedRequest, res: Response) => {
+  res.json({
+    success: true,
+    models: PREDEFINED_GEMINI_MODELS,
+    count: PREDEFINED_GEMINI_MODELS.length,
+    message: `Predefined Gemini model candidates loaded (${PREDEFINED_GEMINI_MODELS.length} models).`,
+  });
+});
 
-  try {
-    const models = await getAvailableGeminiModels(keyToUse);
-    // If discovered with user's session key, cache in user store
-    if (!cleanProvidedKey || cleanProvidedKey === getUserKey(userId)) {
-      setUserAvailableModels(userId, models);
+// POST /api/ai-config/key - Save personal Gemini API key to user session
+router.post(
+  '/key',
+  authenticate,
+  validateBody(SaveKeySchema),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.id || 'anonymous';
+    const cleanKey = cleanApiKey(req.body.apiKey);
+
+    if (!cleanKey) {
+      res.status(400).json({
+        success: false,
+        error: 'API key cannot be empty or a masked placeholder.',
+      });
+      return;
+    }
+
+    setUserKey(userId, cleanKey);
+    if (req.body.selectedModel && isValidPredefinedModel(req.body.selectedModel)) {
+      setUserSelectedModel(userId, req.body.selectedModel);
     }
 
     res.json({
       success: true,
-      models,
-      count: models.length,
-      message: `Retrieved ${models.length} Gemini models supporting text generation.`,
-    });
-  } catch (err: any) {
-    const safeMsg = err.message || 'Failed to list Gemini models';
-    const cachedModels = getUserAvailableModels(userId) || [];
-    res.status(400).json({
-      success: false,
-      error: safeMsg,
-      retryDelay: err.retryDelay,
-      models: cachedModels,
+      configured: true,
+      hasApiKey: true,
+      maskedKey: getUserMaskedKey(userId),
+      activeModel: getUserActiveModel(userId) || null,
+      message: 'Personal Gemini API key saved to your session securely. Select and test a model to activate.',
     });
   }
-};
+);
 
-// GET & POST /api/ai-config/models - Refresh available models for user's configured key or provided key
-router.get('/models', authenticate, handleModelsDiscovery);
-router.post('/models', authenticate, handleModelsDiscovery);
-
-// POST /api/ai-config - Save personal Gemini API key for the requesting user session
-// Note: Verifies real text-generation capability BEFORE declaring key active (Feature A.4)
+// POST /api/ai-config - Save personal Gemini API key (supports legacy payload or direct save)
 router.post(
   '/',
   authenticate,
@@ -132,57 +138,105 @@ router.post(
   async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user?.id || 'anonymous';
     const cleanKey = cleanApiKey(req.body.apiKey);
-    const requestedModel = req.body.selectedModel?.trim() || 'auto';
+    const requestedModel = req.body.selectedModel?.trim();
 
     if (!cleanKey) {
       res.status(400).json({
         success: false,
-        error: 'API key cannot be empty.',
+        error: 'API key cannot be empty or a masked placeholder.',
       });
       return;
     }
 
-    // Verify key works with actual Google text generation before saving
-    const testResult = await testGeminiKey(cleanKey, requestedModel);
-    if (!testResult.success) {
-      res.status(400).json({
-        success: false,
-        error: testResult.message,
-        retryDelay: testResult.retryDelay,
-      });
-      return;
-    }
-
-    // Key is verified working, store in session
+    // Save key to session and database
     setUserKey(userId, cleanKey);
-    setUserModelPreference(userId, requestedModel);
-    setUserVerifiedModel(userId, testResult.model);
-    if (testResult.availableModels) {
-      setUserAvailableModels(userId, testResult.availableModels);
+
+    // If a valid model was requested, test it
+    if (requestedModel && isValidPredefinedModel(requestedModel)) {
+      setUserSelectedModel(userId, requestedModel);
+      const testResult = await testIndividualModel(cleanKey, requestedModel, userId);
+      if (testResult.status === 'passed') {
+        setUserActiveModel(userId, requestedModel);
+        res.json({
+          success: true,
+          configured: true,
+          hasApiKey: true,
+          maskedKey: getUserMaskedKey(userId),
+          model: requestedModel,
+          activeModel: requestedModel,
+          selectedModel: requestedModel,
+          test: testResult,
+          modelTestResults: getAllUserModelTests(userId),
+          message: `Gemini API key saved and model "${requestedModel}" activated successfully!`,
+        });
+        return;
+      } else {
+        res.status(400).json({
+          success: false,
+          configured: true,
+          hasApiKey: true,
+          maskedKey: getUserMaskedKey(userId),
+          error: testResult.message,
+          test: testResult,
+          retryDelay: testResult.retryDelay,
+          modelTestResults: getAllUserModelTests(userId),
+        });
+        return;
+      }
     }
 
     res.json({
       success: true,
       configured: true,
-      model: testResult.model,
-      selectedModel: requestedModel,
-      activeModel: testResult.model,
-      availableModels: testResult.availableModels || [],
-      message: `Gemini API key verified and activated successfully using ${testResult.model}!`,
+      hasApiKey: true,
+      maskedKey: getUserMaskedKey(userId),
+      activeModel: getUserActiveModel(userId) || null,
+      message: 'Gemini API key saved to session. Test individual models to activate.',
     });
   }
 );
 
-// POST /api/ai-config/test - Test connection to Gemini API using provided or saved key
+// POST /api/ai-config/test - Test an individual model manually one at a time
 router.post(
   '/test',
   authenticate,
-  validateBody(TestKeySchema),
   async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user?.id || 'anonymous';
-    const providedKey = req.body.apiKey ? cleanApiKey(req.body.apiKey) : undefined;
-    const keyToTest = providedKey || getUserKey(userId);
-    const requestedModel = req.body.selectedModel?.trim() || getUserModelPreference(userId) || 'auto';
+    await ensureUserConfigLoaded(userId);
+
+    const modelToTest = req.body?.model?.trim() || req.body?.selectedModel?.trim() || getUserSelectedModel(userId) || 'gemini-3.8-flash';
+    const rawProvidedKey = req.body?.apiKey;
+    let keyToTest: string | undefined;
+
+    if (rawProvidedKey) {
+      const clean = cleanApiKey(rawProvidedKey);
+      if (!clean) {
+        // If user submitted masked bullets from placeholder, fall back to saved key if configured
+        if (hasUserKey(userId)) {
+          keyToTest = getUserKey(userId);
+        } else {
+          res.status(400).json({
+            success: false,
+            error: 'Cannot test using a masked placeholder. Please enter a valid Gemini API key.',
+          });
+          return;
+        }
+      } else {
+        keyToTest = clean;
+        // Persist newly entered key to user session & durable storage
+        setUserKey(userId, clean);
+      }
+    } else {
+      keyToTest = getUserKey(userId);
+    }
+
+    if (!isValidPredefinedModel(modelToTest)) {
+      res.status(400).json({
+        success: false,
+        error: `Model "${modelToTest}" is not in the predefined Gemini model list. Valid models: ${PREDEFINED_MODEL_IDS.join(', ')}`,
+      });
+      return;
+    }
 
     if (!keyToTest) {
       res.status(400).json({
@@ -192,80 +246,233 @@ router.post(
       return;
     }
 
-    const testResult = await testGeminiKey(keyToTest, requestedModel);
+    // Remember user's selection
+    setUserSelectedModel(userId, modelToTest);
 
-    if (!testResult.success) {
+    // Test ONLY the requested model
+    const testResult = await testIndividualModel(keyToTest, modelToTest, userId);
+
+    if (testResult.status !== 'passed') {
       res.status(400).json({
         success: false,
+        configured: hasUserKey(userId),
+        hasApiKey: hasUserKey(userId),
+        maskedKey: getUserMaskedKey(userId) || null,
+        activeModel: getUserActiveModel(userId) || null,
+        model: modelToTest,
+        test: testResult,
         error: testResult.message,
         retryDelay: testResult.retryDelay,
-        availableModels: testResult.availableModels,
+        modelTestResults: getAllUserModelTests(userId),
       });
       return;
     }
 
-    // If key was verified, record working model
-    setUserVerifiedModel(userId, testResult.model);
-    if (testResult.availableModels) {
-      setUserAvailableModels(userId, testResult.availableModels);
-    }
-
     res.json({
       success: true,
-      model: testResult.model,
-      selectedModel: requestedModel,
-      availableModels: testResult.availableModels,
+      configured: hasUserKey(userId),
+      hasApiKey: hasUserKey(userId),
+      maskedKey: getUserMaskedKey(userId) || null,
+      activeModel: getUserActiveModel(userId) || null,
+      model: modelToTest,
+      test: testResult,
+      modelTestResults: getAllUserModelTests(userId),
       message: testResult.message,
     });
   }
 );
 
-// PATCH /api/ai-config/model - Update model preference and test with 1 minimal ping
+// POST /api/ai-config/activate - Explicitly activate a successfully tested model
+router.post(
+  '/activate',
+  authenticate,
+  validateBody(ActivateModelSchema),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.id || 'anonymous';
+    await ensureUserConfigLoaded(userId);
+
+    const modelToActivate = req.body.model.trim();
+    const rawProvidedKey = req.body.apiKey;
+    if (rawProvidedKey) {
+      const clean = cleanApiKey(rawProvidedKey);
+      if (clean) {
+        setUserKey(userId, clean);
+      }
+    }
+
+    if (!isValidPredefinedModel(modelToActivate)) {
+      res.status(400).json({
+        success: false,
+        error: `Model "${modelToActivate}" is not a valid predefined Gemini model.`,
+      });
+      return;
+    }
+
+    if (!hasUserKey(userId)) {
+      res.status(400).json({
+        success: false,
+        error: 'No Gemini API key configured. Please enter and save an API key before activation.',
+      });
+      return;
+    }
+
+    // Strict validation: Model MUST have a passed test before activation
+    if (!isModelTestPassed(userId, modelToActivate)) {
+      res.status(400).json({
+        success: false,
+        error: `Cannot activate model "${modelToActivate}". The model must pass a real generation test before activation. Click "Test Model" first.`,
+      });
+      return;
+    }
+
+    // Persist active model in authoritative backend session and database
+    setUserActiveModel(userId, modelToActivate);
+    setUserSelectedModel(userId, modelToActivate);
+
+    res.json({
+      success: true,
+      configured: true,
+      hasApiKey: true,
+      activeModel: modelToActivate,
+      message: `Model "${modelToActivate}" activated successfully! All subsequent compliance checks will use this model.`,
+      modelTestResults: getAllUserModelTests(userId),
+    });
+  }
+);
+
+// PATCH /api/ai-config/model - Backward-compatible model preference update / activation
 router.patch(
   '/model',
   authenticate,
   validateBody(UpdateModelSchema),
   async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user?.id || 'anonymous';
-    const key = getUserKey(userId);
+    await ensureUserConfigLoaded(userId);
     const selectedModel = req.body.selectedModel.trim();
+    const key = getUserKey(userId);
+
+    if (!isValidPredefinedModel(selectedModel)) {
+      res.status(400).json({
+        success: false,
+        error: `Model "${selectedModel}" is not in the predefined Gemini model list.`,
+      });
+      return;
+    }
 
     if (!key) {
       res.status(400).json({
         success: false,
-        error: 'No Gemini API key configured. Please enter and activate your API key first.',
+        error: 'No Gemini API key configured. Please enter your API key first.',
       });
       return;
     }
 
-    // Test the selected model with one ping request
-    const testResult = await testGeminiKey(key, selectedModel);
-    if (!testResult.success) {
-      res.status(400).json({
-        success: false,
-        error: testResult.message,
-        retryDelay: testResult.retryDelay,
-      });
-      return;
+    // If not tested yet, test it
+    if (!isModelTestPassed(userId, selectedModel)) {
+      const testResult = await testIndividualModel(key, selectedModel, userId);
+      if (testResult.status !== 'passed') {
+        res.status(400).json({
+          success: false,
+          error: testResult.message,
+          retryDelay: testResult.retryDelay,
+          modelTestResults: getAllUserModelTests(userId),
+        });
+        return;
+      }
     }
 
-    // Save preference and verified model
-    setUserModelPreference(userId, selectedModel);
-    setUserVerifiedModel(userId, testResult.model);
-    if (testResult.availableModels) {
-      setUserAvailableModels(userId, testResult.availableModels);
-    }
+    // Activate model
+    setUserActiveModel(userId, selectedModel);
+    setUserSelectedModel(userId, selectedModel);
 
     res.json({
       success: true,
       selectedModel,
-      activeModel: testResult.model,
-      message: `Model preference set to "${selectedModel}". Verified operational via test ping.`,
+      activeModel: selectedModel,
+      message: `Model "${selectedModel}" set as active compliance engine.`,
+      modelTestResults: getAllUserModelTests(userId),
     });
   }
 );
 
-// DELETE /api/ai-config - Remove personal Gemini API key for the requesting user
+// GET /api/ai-config/diagnose - Internal diagnostic endpoint to inspect models accessible to configured key and test generation
+router.get('/diagnose', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user?.id || 'anonymous';
+  await ensureUserConfigLoaded(userId);
+  const key = getUserKey(userId);
+
+  if (!key) {
+    res.status(400).json({
+      success: false,
+      error: 'No Gemini API key configured to run diagnostics.',
+    });
+    return;
+  }
+
+  try {
+    const models = await listAvailableGeminiModels(key);
+    const contentModels = models.filter((m) =>
+      m.supportedGenerationMethods.includes('generateContent')
+    );
+
+    // Find the first accessible predefined candidate
+    const accessiblePredefined = PREDEFINED_GEMINI_MODELS.find((m) =>
+      contentModels.some((cm) => cm.id === m.id)
+    );
+
+    const testCandidateId = accessiblePredefined ? accessiblePredefined.id : contentModels[0]?.id || 'gemini-3.8-flash';
+
+    let liveGenerationTest: {
+      candidateId: string;
+      generationSucceeded: boolean;
+      httpStatus: number;
+      providerErrorCode?: string;
+      message: string;
+    };
+
+    try {
+      const genResult = await executeGeminiGenerateContent({
+        apiKey: key,
+        modelId: testCandidateId,
+        prompt: 'ping',
+        timeoutMs: 25000,
+      });
+
+      liveGenerationTest = {
+        candidateId: testCandidateId,
+        generationSucceeded: Boolean(genResult.text && genResult.text.trim().length > 0),
+        httpStatus: 200,
+        message: 'Live generation request succeeded with response text returned.',
+      };
+    } catch (genErr: any) {
+      liveGenerationTest = {
+        candidateId: testCandidateId,
+        generationSucceeded: false,
+        httpStatus: genErr.statusCode || 500,
+        providerErrorCode: genErr.googleStatus || 'GENERATION_FAILED',
+        message: genErr.message || 'Generation failed',
+      };
+    }
+
+    res.json({
+      success: true,
+      totalModels: models.length,
+      generateContentModelsCount: contentModels.length,
+      liveGenerationTest,
+      predefinedCandidates: PREDEFINED_GEMINI_MODELS.map((m) => ({
+        ...m,
+        accessible: contentModels.some((cm) => cm.id === m.id),
+      })),
+    });
+  } catch (err: any) {
+    res.status(err.statusCode || 500).json({
+      success: false,
+      error: err.message || 'Diagnostic call failed',
+    });
+  }
+});
+
+// DELETE /api/ai-config - Remove personal Gemini API key and model configurations
 router.delete('/', authenticate, (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id || 'anonymous';
   deleteUserKey(userId);
@@ -273,7 +480,9 @@ router.delete('/', authenticate, (req: AuthenticatedRequest, res: Response) => {
   res.json({
     success: true,
     configured: false,
-    message: 'Gemini API key and model preferences removed from your session.',
+    hasApiKey: false,
+    activeModel: null,
+    message: 'Gemini API key, active model, and test results removed.',
   });
 });
 

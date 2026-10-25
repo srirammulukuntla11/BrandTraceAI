@@ -58,7 +58,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onRoleChange }) => {
   return (
     <>
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl xl:max-w-[1440px] 2xl:max-w-[1560px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Logo & Platform Name */}
             <div className="flex items-center gap-8">
@@ -104,19 +104,29 @@ export const Navbar: React.FC<NavbarProps> = ({ onRoleChange }) => {
                 type="button"
                 onClick={() => setIsAiModalOpen(true)}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
-                  aiConfig?.configured
+                  aiConfig?.configured && aiConfig?.activeModel
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 shadow-xs'
+                    : aiConfig?.configured
+                    ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-xs'
                     : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 shadow-xs'
                 }`}
-                title="Configure personal Gemini API key (user session only)"
+                title="Configure personal Gemini API key and active model"
               >
                 <Key className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">
-                  {aiConfig?.configured ? 'Gemini Key Active' : 'Setup Gemini Key'}
+                  {aiConfig?.configured && aiConfig?.activeModel
+                    ? `AI Engine: ${aiConfig.activeModel}`
+                    : aiConfig?.configured
+                    ? 'AI Key Ready (Select Model)'
+                    : 'Setup Gemini Key'}
                 </span>
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    aiConfig?.configured ? 'bg-emerald-500' : 'bg-amber-500'
+                    aiConfig?.configured && aiConfig?.activeModel
+                      ? 'bg-emerald-500'
+                      : aiConfig?.configured
+                      ? 'bg-blue-500'
+                      : 'bg-amber-500 animate-pulse'
                   }`}
                 />
               </button>

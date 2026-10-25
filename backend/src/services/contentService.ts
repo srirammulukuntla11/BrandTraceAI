@@ -18,6 +18,7 @@ export interface SubmitDraftParams {
   };
   userApiKey?: string;
   userModelPreference?: string;
+  activeModel?: string;
 }
 
 export interface SubmitRevisionParams {
@@ -30,11 +31,13 @@ export interface SubmitRevisionParams {
   };
   userApiKey?: string;
   userModelPreference?: string;
+  activeModel?: string;
 }
 
 export async function submitContentDraft(params: SubmitDraftParams): Promise<IContentItem> {
-  const { contentType, text, user, userApiKey, userModelPreference } = params;
+  const { contentType, text, user, userApiKey, userModelPreference, activeModel } = params;
   const title = (params.title || '').trim() || `Draft - ${new Date().toLocaleDateString()}`;
+  const modelToUse = activeModel || userModelPreference;
 
   // 1. Fetch active guidelines
   const guidelines = await getAllGuidelines('active');
@@ -48,7 +51,7 @@ export async function submitContentDraft(params: SubmitDraftParams): Promise<ICo
     guidelines,
     contentType,
     userApiKey,
-    userModelPreference || 'auto'
+    modelToUse
   );
 
   // 4. Merge findings: Rule Violations first, then AI findings
@@ -98,7 +101,8 @@ export async function submitContentDraft(params: SubmitDraftParams): Promise<ICo
 }
 
 export async function submitRevision(params: SubmitRevisionParams): Promise<IContentItem | null> {
-  const { contentId, text, user, userApiKey, userModelPreference } = params;
+  const { contentId, text, user, userApiKey, userModelPreference, activeModel } = params;
+  const modelToUse = activeModel || userModelPreference;
 
   let existingItem: IContentItem | null = null;
   if (isUsingMemoryStore()) {
@@ -124,7 +128,7 @@ export async function submitRevision(params: SubmitRevisionParams): Promise<ICon
     guidelines,
     existingItem.contentType,
     userApiKey,
-    userModelPreference || 'auto'
+    modelToUse
   );
 
   const allFindings: Finding[] = [...ruleFindings, ...geminiResult.findings];

@@ -1,17 +1,11 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { executeGeminiGenerateContent } from './geminiClient.js';
 import { z } from 'zod';
-import { config } from '../config/env.js';
 import { Finding, IGuideline } from '../types/index.js';
 import { isGuidelineApplicable } from './deterministicChecker.js';
 import {
-  sanitizeApiKeyError,
-  classifyGeminiError,
-  resolveActiveGeminiModel,
-  getAvailableGeminiModels,
-  getCandidateGeminiModels,
   cleanApiKey,
-  isRateLimitOrQuotaError,
-  extractRetryDelay,
+  classifyGeminiModelError,
+  isValidPredefinedModel,
 } from './userApiKeyService.js';
 
 // Schema for validating raw model responses
@@ -23,6 +17,7 @@ const RawGeminiFindingSchema = z.object({
   explanation: z.string().min(1),
   guidelineId: z.string().optional().nullable(),
   suggestedCorrection: z.string().optional().nullable(),
+  replacementText: z.string().optional().nullable(),
 });
 
 const RawGeminiResponseSchema = z.object({
@@ -37,28 +32,30 @@ export interface GeminiAnalysisResult {
 }
 
 /**
- * Runs Gemini AI analysis on the draft text for brand tone, messaging consistency,
- * and unverified claims against supplied approved guidelines.
+ * Runs Gemini AI analysis on draft text using the user's EXACT active model.
  *
  * Rules:
  * - Only backend calls Gemini.
  * - MUST ONLY use the requesting user's own configured key (userApiKey).
- * - NO platform-owned key or GEMINI_API_KEY fallback is permitted.
+ * - NO platform-level fallback key is permitted.
+ * - MUST use the EXACT active model activated by the user.
+ * - NO silent substitution or candidate fallback is permitted.
  * - Draft text is treated as UNTRUSTED user data.
  * - Quoted passages MUST exist verbatim in the draft text.
  * - Cited guideline IDs MUST match supplied guideline IDs.
  * - If Gemini fails or user key is missing, returns clear status without faking findings.
+ * - Deterministic rule findings are always preserved by the caller.
  */
 export async function runGeminiAnalysis(
   draftText: string,
   guidelines: IGuideline[],
   contentType?: string,
   userApiKey?: string,
-  preferredModel: string = 'auto'
+  activeModel?: string
 ): Promise<GeminiAnalysisResult> {
   const activeKey = cleanApiKey(userApiKey || '');
 
-  // Strict check: User must configure their own personal key
+  // 1. Check if user configured their personal API key
   if (!activeKey) {
     return {
       available: false,
@@ -67,17 +64,20 @@ export async function runGeminiAnalysis(
     };
   }
 
+  // Resolve target model: use provided activeModel, or fall back to system default candidate
+  const targetModel = (activeModel || 'gemini-3.8-flash').trim();
+
   const text = (draftText || '').trim();
   if (!text) {
     return {
       available: true,
-      model: preferredModel !== 'auto' ? preferredModel : config.geminiModel,
+      model: targetModel,
       message: 'Draft is empty.',
       findings: [],
     };
   }
 
-  // Filter applicable guidelines
+  // 3. Filter applicable guidelines
   const activeGuidelines = guidelines.filter((g) => isGuidelineApplicable(g, contentType));
   const validGuidelineMap = new Map<string, IGuideline>();
   for (const g of activeGuidelines) {
@@ -123,83 +123,34 @@ Respond ONLY with valid JSON in this exact structure:
       "title": "Short descriptive title",
       "explanation": "Clear explanation of why this was flagged",
       "guidelineId": "matching guideline ID or null",
-      "suggestedCorrection": "Constructive alternative wording preserving user intent"
+      "suggestedCorrection": "Constructive alternative wording preserving user intent",
+      "replacementText": "Exact substitute text or sentence to replace quotedText directly in the draft (without instruction prefixes like 'Replace' or 'Change'). If no direct substitution is safe or claim requires manual verification, leave null or omit."
     }
   ]
 }`;
 
-  let targetModel = preferredModel !== 'auto' ? preferredModel : config.geminiModel;
-
   try {
-    // Dynamically discover available models supporting generateContent for this user's key
-    let availableModels: string[] | undefined;
-    try {
-      availableModels = await getAvailableGeminiModels(activeKey);
-    } catch {
-      // Non-fatal if listModels fails; fallback candidates will be evaluated
-    }
+    const response = await executeGeminiGenerateContent({
+      apiKey: activeKey,
+      modelId: targetModel,
+      prompt,
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0.2,
+      },
+      timeoutMs: 25000,
+    });
 
-    let candidates: string[] = [];
-    if (preferredModel && preferredModel !== 'auto') {
-      candidates = [preferredModel];
-    } else {
-      candidates = getCandidateGeminiModels(availableModels);
-    }
-
-    const genAI = new GoogleGenerativeAI(activeKey);
-
-    let lastError: any = null;
-    let responseText: string | null = null;
-    let successfulModel: string = candidates[0] || config.geminiModel;
-
-    for (const candidate of candidates) {
-      targetModel = candidate;
-      try {
-        const model = genAI.getGenerativeModel({
-          model: candidate,
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature: 0.2,
-          },
-        });
-
-        const result = await model.generateContent(prompt);
-        responseText = result.response.text();
-        if (responseText) {
-          successfulModel = candidate;
-          break;
-        }
-      } catch (err: any) {
-        lastError = err;
-        // CRITICAL: Do NOT automatically retry many models on quota exhaustion or rate limits (Feature B.10)
-        if (isRateLimitOrQuotaError(err)) {
-          throw err;
-        }
-
-        const safeMsg = classifyGeminiError(err);
-        // If fatal key error, stop trying other models
-        if (/Invalid Gemini API key|expired|restriction block|permission denied/i.test(safeMsg)) {
-          throw err;
-        }
-        // If 404 / unsupported model in auto mode, loop to try next candidate
-        if (preferredModel && preferredModel !== 'auto') {
-          throw err;
-        }
-        continue;
-      }
-    }
+    const responseText = response.text;
 
     if (!responseText) {
-      if (lastError) throw lastError;
       return {
         available: false,
         model: targetModel,
-        message: 'Gemini returned an empty response.',
+        message: `Gemini active model "${targetModel}" returned an empty response. Deterministic rule findings are preserved.`,
         findings: [],
       };
     }
-
-    targetModel = successfulModel;
 
     // Parse and validate JSON with Zod
     let parsedJson: any;
@@ -209,7 +160,7 @@ Respond ONLY with valid JSON in this exact structure:
       return {
         available: false,
         model: targetModel,
-        message: 'Gemini response was not valid JSON.',
+        message: `Gemini response was not valid JSON from model "${targetModel}". Deterministic rule findings are preserved.`,
         findings: [],
       };
     }
@@ -251,6 +202,15 @@ Respond ONLY with valid JSON in this exact structure:
         citedGuidelineTitle = validGuidelineMap.get(raw.guidelineId)?.title;
       }
 
+      const cleanRepl = raw.replacementText || (
+        raw.suggestedCorrection &&
+        !/^Replace\b/i.test(raw.suggestedCorrection) &&
+        !/^Consider\b/i.test(raw.suggestedCorrection) &&
+        !/^Verify\b/i.test(raw.suggestedCorrection)
+          ? raw.suggestedCorrection
+          : undefined
+      );
+
       validatedFindings.push({
         id: `ai-${Date.now()}-${i}`,
         type: raw.type,
@@ -261,6 +221,8 @@ Respond ONLY with valid JSON in this exact structure:
         guidelineId: citedGuidelineId,
         guidelineTitle: citedGuidelineTitle,
         suggestedCorrection: raw.suggestedCorrection || undefined,
+        replacementText: cleanRepl || undefined,
+        actionType: cleanRepl ? 'replace' : (raw.type === 'Needs Verification' ? 'verify' : undefined),
         status: 'open',
         createdAt: new Date().toISOString(),
       });
@@ -269,15 +231,15 @@ Respond ONLY with valid JSON in this exact structure:
     return {
       available: true,
       model: targetModel,
-      message: `AI analysis completed successfully using model ${targetModel}.`,
+      message: `AI analysis completed successfully using active model ${targetModel}.`,
       findings: validatedFindings,
     };
   } catch (err: any) {
-    const safeErrorMsg = classifyGeminiError(err);
+    const classified = classifyGeminiModelError(err, targetModel);
     return {
       available: false,
       model: targetModel,
-      message: `Gemini API call failed: ${safeErrorMsg}. Deterministic rule findings are preserved.`,
+      message: `Gemini API call failed for active model "${targetModel}": ${classified.message}. Deterministic rule findings are preserved.`,
       findings: [],
     };
   }

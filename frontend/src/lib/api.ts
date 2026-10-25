@@ -48,7 +48,12 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
       data?.error ||
       (Array.isArray(data?.details) ? data.details.map((d: any) => d?.message).filter(Boolean).join(', ') : null) ||
       `Request failed with status ${response.status} (${response.statusText})`;
-    throw new Error(errorMsg);
+    const err: any = new Error(errorMsg);
+    err.status = response.status;
+    err.test = data?.test;
+    err.modelTestResults = data?.modelTestResults;
+    err.retryDelay = data?.retryDelay || data?.test?.retryDelay;
+    throw err;
   }
 
   return data as T;
@@ -159,17 +164,77 @@ export const api = {
   // User-scoped AI Configuration
   getAiConfig: () => request<AiConfigStatus>('/api/ai-config'),
 
-  refreshAiModels: (apiKey?: string) =>
+  refreshAiModels: () =>
     request<{
       success: boolean;
-      models: string[];
+      models: any[];
       count: number;
+      message: string;
+    }>('/api/ai-config/models'),
+
+  testAiModel: (model: string, apiKey?: string) =>
+    request<{
+      success: boolean;
+      model: string;
+      test: any;
+      modelTestResults?: Record<string, any>;
       message: string;
       error?: string;
       retryDelay?: string;
-    }>('/api/ai-config/models', {
+    }>('/api/ai-config/test', {
+      method: 'POST',
+      body: JSON.stringify({ model, apiKey }),
+    }),
+
+  activateAiModel: (model: string, apiKey?: string) =>
+    request<{
+      success: boolean;
+      configured: boolean;
+      activeModel: string;
+      message: string;
+      modelTestResults?: Record<string, any>;
+    }>('/api/ai-config/activate', {
+      method: 'POST',
+      body: JSON.stringify({ model, apiKey }),
+    }),
+
+  saveAiKeyOnly: (apiKey: string) =>
+    request<{
+      success: boolean;
+      configured: boolean;
+      activeModel?: string;
+      message: string;
+    }>('/api/ai-config/key', {
       method: 'POST',
       body: JSON.stringify({ apiKey }),
+    }),
+
+  saveAiKey: (apiKey: string, selectedModel?: string) =>
+    request<{
+      success: boolean;
+      configured: boolean;
+      model?: string;
+      selectedModel?: string;
+      activeModel?: string;
+      message: string;
+      modelTestResults?: Record<string, any>;
+    }>('/api/ai-config', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey, selectedModel }),
+    }),
+
+  testAiKey: (apiKey?: string, selectedModel?: string) =>
+    request<{
+      success: boolean;
+      model: string;
+      selectedModel?: string;
+      test?: any;
+      modelTestResults?: Record<string, any>;
+      message: string;
+      retryDelay?: string;
+    }>('/api/ai-config/test', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey, model: selectedModel }),
     }),
 
   updateAiModel: (selectedModel: string) =>
@@ -181,35 +246,11 @@ export const api = {
       }
     ),
 
-  saveAiKey: (apiKey: string, selectedModel?: string) =>
-    request<{
-      success: boolean;
-      configured: boolean;
-      model: string;
-      selectedModel?: string;
-      activeModel?: string;
-      availableModels?: string[];
-      message: string;
-    }>('/api/ai-config', {
-      method: 'POST',
-      body: JSON.stringify({ apiKey, selectedModel }),
-    }),
-
-  testAiKey: (apiKey?: string, selectedModel?: string) =>
-    request<{
-      success: boolean;
-      model: string;
-      selectedModel?: string;
-      availableModels?: string[];
-      message: string;
-      retryDelay?: string;
-    }>('/api/ai-config/test', {
-      method: 'POST',
-      body: JSON.stringify({ apiKey, selectedModel }),
-    }),
-
   deleteAiKey: () =>
     request<{ success: boolean; configured: boolean; message: string }>('/api/ai-config', {
       method: 'DELETE',
     }),
+
+  diagnoseAiModels: () => request<any>('/api/ai-config/diagnose'),
 };
+

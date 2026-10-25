@@ -4,6 +4,8 @@ export type FindingStatus = 'open' | 'accepted' | 'rejected' | 'resolved';
 
 export type Severity = 'low' | 'medium' | 'high';
 
+export type FindingActionType = 'replace' | 'insert' | 'remove' | 'verify';
+
 export interface Finding {
   id: string;
   type: FindingType;
@@ -14,6 +16,8 @@ export interface Finding {
   guidelineId?: string;
   guidelineTitle?: string;
   suggestedCorrection?: string;
+  replacementText?: string;
+  actionType?: FindingActionType;
   status: FindingStatus;
   createdAt: string;
 }

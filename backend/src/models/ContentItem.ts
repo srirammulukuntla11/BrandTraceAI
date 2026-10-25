@@ -23,6 +23,8 @@ const FindingSchema = new Schema(
     guidelineId: { type: String },
     guidelineTitle: { type: String },
     suggestedCorrection: { type: String },
+    replacementText: { type: String },
+    actionType: { type: String },
     status: {
       type: String,
       required: true,

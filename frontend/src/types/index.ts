@@ -4,6 +4,8 @@ export type FindingStatus = 'open' | 'accepted' | 'rejected' | 'resolved';
 
 export type Severity = 'low' | 'medium' | 'high';
 
+export type FindingActionType = 'replace' | 'insert' | 'remove' | 'verify';
+
 export interface Finding {
   id: string;
   type: FindingType;
@@ -14,6 +16,8 @@ export interface Finding {
   guidelineId?: string;
   guidelineTitle?: string;
   suggestedCorrection?: string;
+  replacementText?: string;
+  actionType?: FindingActionType;
   status: FindingStatus;
   createdAt: string;
 }
@@ -116,13 +120,38 @@ export interface HealthStatus {
   environment: string;
 }
 
+export type ModelTestStatus =
+  | 'not_tested'
+  | 'testing'
+  | 'passed'
+  | 'quota_exceeded'
+  | 'invalid_key'
+  | 'permission_denied'
+  | 'unsupported_model'
+  | 'model_not_found'
+  | 'network_error'
+  | 'server_error'
+  | 'request_error';
+
+export interface ModelTestRecord {
+  modelId: string;
+  status: ModelTestStatus;
+  message: string;
+  statusCode?: number;
+  retryDelay?: string;
+  testedAt: string;
+}
+
 export interface AiConfigStatus {
   success: boolean;
   configured: boolean;
-  model: string;
+  hasApiKey?: boolean;
+  maskedKey?: string | null;
+  model?: string | null;
   selectedModel?: string;
-  activeModel?: string;
+  activeModel?: string | null;
   availableModels?: string[];
+  modelTestResults?: Record<string, ModelTestRecord>;
   modelsError?: string;
   message: string;
   retryDelay?: string;

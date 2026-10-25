@@ -62,6 +62,7 @@ export function runDeterministicChecks(
           occurrence++;
           const matchedText = match[2]; // Exact matched casing from user's draft
 
+          const replacement = guideline.preferredTerm || '';
           const suggested = guideline.preferredTerm
             ? `Replace "${matchedText}" with "${guideline.preferredTerm}".`
             : `Remove or rephrase "${matchedText}" in accordance with guideline.`;
@@ -76,6 +77,8 @@ export function runDeterministicChecks(
             guidelineId,
             guidelineTitle,
             suggestedCorrection: suggested,
+            replacementText: replacement,
+            actionType: replacement ? 'replace' : 'remove',
             status: 'open',
             createdAt: new Date().toISOString(),
           });
@@ -108,6 +111,8 @@ export function runDeterministicChecks(
             guidelineId,
             guidelineTitle,
             suggestedCorrection: `Add mandatory wording: "${reqTerm}"`,
+            replacementText: reqTerm,
+            actionType: 'insert',
             status: 'open',
             createdAt: new Date().toISOString(),
           });

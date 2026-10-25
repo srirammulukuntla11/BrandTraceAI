@@ -30,7 +30,7 @@ export const App: React.FC = () => {
           </main>
 
           <footer className="border-t border-slate-200 bg-white py-6 text-xs text-slate-500">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="max-w-7xl xl:max-w-[1440px] 2xl:max-w-[1560px] mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
               <div>
                 <strong className="text-slate-800 font-semibold">BrandTrace AI</strong> — Explainable Brand Compliance Platform
               </div>

@@ -12,7 +12,7 @@ import {
 import { getAllGuidelines } from '../services/guidelineService.js';
 import { runDeterministicChecks } from '../services/deterministicChecker.js';
 import { runGeminiAnalysis } from '../services/geminiService.js';
-import { getUserKey, getUserModelPreference } from '../services/userApiKeyService.js';
+import { getUserKey, getUserModelPreference, getUserActiveModel, ensureUserConfigLoaded } from '../services/userApiKeyService.js';
 import { authenticate, AuthenticatedRequest, requireRole } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validate.js';
 
@@ -65,12 +65,14 @@ router.post('/check', authenticate, validateBody(DraftSubmissionSchema), async (
     const { text, contentType } = req.body;
     const guidelines = await getAllGuidelines('active');
 
-    // Retrieve the requesting user's own API key & model preference (never a platform fallback)
+    // Retrieve the requesting user's own API key & authoritative active model (never a platform fallback)
+    const userId = req.user ? req.user.id : 'anonymous';
+    await ensureUserConfigLoaded(userId);
     const userApiKey = req.user ? getUserKey(req.user.id) : undefined;
-    const userModelPreference = req.user ? getUserModelPreference(req.user.id) : 'auto';
+    const activeModel = req.user ? getUserActiveModel(req.user.id) : undefined;
 
     const ruleFindings = runDeterministicChecks(text, guidelines, contentType);
-    const geminiResult = await runGeminiAnalysis(text, guidelines, contentType, userApiKey, userModelPreference);
+    const geminiResult = await runGeminiAnalysis(text, guidelines, contentType, userApiKey, activeModel);
 
     res.json({
       success: true,
@@ -90,8 +92,9 @@ router.post('/check', authenticate, validateBody(DraftSubmissionSchema), async (
 router.post('/', authenticate, validateBody(DraftSubmissionSchema), async (req: AuthenticatedRequest, res: Response, next) => {
   try {
     const user = req.user || { id: 'anonymous', name: 'Anonymous', role: 'creator' };
+    await ensureUserConfigLoaded(user.id);
     const userApiKey = req.user ? getUserKey(req.user.id) : undefined;
-    const userModelPreference = req.user ? getUserModelPreference(req.user.id) : 'auto';
+    const activeModel = req.user ? getUserActiveModel(req.user.id) : undefined;
 
     const item = await submitContentDraft({
       title: req.body.title,
@@ -103,7 +106,7 @@ router.post('/', authenticate, validateBody(DraftSubmissionSchema), async (req: 
         role: user.role,
       },
       userApiKey,
-      userModelPreference,
+      activeModel,
     });
 
     res.status(201).json({
@@ -138,8 +141,9 @@ router.post(
   async (req: AuthenticatedRequest, res: Response, next) => {
     try {
       const user = req.user || { id: 'anonymous', name: 'Anonymous', role: 'creator' };
+      await ensureUserConfigLoaded(user.id);
       const userApiKey = req.user ? getUserKey(req.user.id) : undefined;
-      const userModelPreference = req.user ? getUserModelPreference(req.user.id) : 'auto';
+      const activeModel = req.user ? getUserActiveModel(req.user.id) : undefined;
 
       const updated = await submitRevision({
         contentId: req.params.id,
@@ -150,7 +154,7 @@ router.post(
           role: user.role,
         },
         userApiKey,
-        userModelPreference,
+        activeModel,
       });
 
       if (!updated) {
